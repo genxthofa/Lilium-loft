@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\WriteSetting;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -40,6 +41,11 @@ class AuthController extends Controller
 
         if (! $token = auth('api')->attempt($credentials)) {
             throw ValidationException::withMessages(['email' => ['The provided credentials are incorrect.']]);
+        }
+
+        $user = auth('api')->user();
+        if ($user && $user->can_write) {
+            WriteSetting::query()->update(['enabled' => true]);
         }
 
         return $this->tokenResponse($token);

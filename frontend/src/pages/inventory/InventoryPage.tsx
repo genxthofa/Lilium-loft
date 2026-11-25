@@ -21,6 +21,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { FilterModal } from '@/components/ui/filter-modal';
+import { ProductDetailModal } from '@/components/products/ProductDetailModal';
 import {
   Table,
   TableBody,
@@ -87,6 +88,8 @@ export function InventoryPage() {
 
   // Quick Adjust Modal State
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [viewProduct, setViewProduct] = useState<Product | null>(null);
+  const [productModalOpen, setProductModalOpen] = useState(false);
   const [adjustType, setAdjustType] = useState<'set' | 'add' | 'subtract'>('set');
   const [adjustAmount, setAdjustAmount] = useState<number>(0);
   const [adjustNote, setAdjustNote] = useState('');
@@ -128,8 +131,7 @@ export function InventoryPage() {
   const openAdjustModal = (product: Product) => {
     setSelectedProduct(product);
     setAdjustType('set');
-    setAdjustAmount(product.stockQuantity);
-    setAdjustNote('');
+    setAdjustAmount(product.manageStock ? (product.stockQuantity ?? 0) : 0);
     setAdjustError('');
   };
 
@@ -507,7 +509,11 @@ export function InventoryPage() {
                   return (
                     <div
                       key={p.id}
-                      className="p-3.5 sm:p-4 rounded-xl border border-slate-200/80 bg-white shadow-sm hover:border-slate-300 transition-all"
+                      onClick={() => {
+                        setViewProduct(p);
+                        setProductModalOpen(true);
+                      }}
+                      className="p-3.5 sm:p-4 rounded-xl border border-slate-200/80 bg-white shadow-sm hover:border-slate-300 transition-all cursor-pointer"
                     >
                       <div className="flex items-start gap-3">
                         {/* Thumbnail */}
@@ -541,7 +547,10 @@ export function InventoryPage() {
                             <Button
                               size="sm"
                               variant="outline"
-                              onClick={() => openAdjustModal(p)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openAdjustModal(p);
+                              }}
                               className="h-7 px-2.5 gap-1 text-xs shrink-0 bg-white text-slate-700 hover:text-red-600 hover:border-red-300"
                             >
                               <Edit3 className="h-3 w-3" />
@@ -550,12 +559,6 @@ export function InventoryPage() {
                           </div>
 
                           <div className="flex items-center gap-2 mt-1.5 flex-wrap text-xs">
-                            {p.sku && (
-                              <span className="font-mono text-[11px] text-slate-500">
-                                {p.sku}
-                              </span>
-                            )}
-                            {p.sku && <span className="text-slate-300">•</span>}
                             <span className="font-bold text-slate-900">
                               {formatMoney(p.price)}
                             </span>
@@ -573,7 +576,7 @@ export function InventoryPage() {
                                     : 'text-slate-900'
                                 }`}
                               >
-                                {p.manageStock ? `${p.stockQuantity} units` : 'Not tracked'}
+                                {p.manageStock ? (p.stockQuantity ?? 0) : 0} units
                               </span>
                             </div>
                             <div>
@@ -602,10 +605,8 @@ export function InventoryPage() {
                     <TableRow>
                       <TableHead className="w-16">Image</TableHead>
                       <TableHead>Product Name</TableHead>
-                      <TableHead>SKU</TableHead>
                       <TableHead>Price</TableHead>
-                      <TableHead>Stock Level</TableHead>
-                      <TableHead>Condition</TableHead>
+                      <TableHead>Stock</TableHead>
                       <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -614,7 +615,14 @@ export function InventoryPage() {
                       const isOut = stockOf(p) === 'out';
                       const isLow = stockOf(p) === 'low';
                       return (
-                        <TableRow key={p.id}>
+                        <TableRow
+                          key={p.id}
+                          onClick={() => {
+                            setViewProduct(p);
+                            setProductModalOpen(true);
+                          }}
+                          className="cursor-pointer hover:bg-slate-50/80 transition-colors"
+                        >
                           <TableCell>
                             <div className="h-11 w-11 rounded-lg bg-slate-100 overflow-hidden border border-slate-200 shrink-0">
                               {p.images[0] ? (
@@ -634,41 +642,32 @@ export function InventoryPage() {
                               {p.categories.join(', ')}
                             </span>
                           </TableCell>
-                          <TableCell className="font-mono text-xs text-slate-600">
-                            {p.sku}
-                          </TableCell>
                           <TableCell className="font-semibold text-slate-900">
                             {formatMoney(p.price)}
                           </TableCell>
                           <TableCell>
-                            <span
-                              className={`font-bold font-mono text-sm ${
-                                isOut
-                                  ? 'text-red-600'
-                                  : isLow
-                                  ? 'text-amber-600'
-                                  : 'text-slate-900'
-                              }`}
-                            >
-                              {p.manageStock ? `${p.stockQuantity} units` : 'Not tracked'}
-                            </span>
-                          </TableCell>
-                          <TableCell>
-                            {isOut ? (
-                              <Badge variant="destructive">Out of Stock</Badge>
-                            ) : stockOf(p) === 'backorder' ? (
-                              <Badge variant="warning">On Backorder</Badge>
-                            ) : isLow ? (
-                              <Badge variant="warning">Low Stock</Badge>
-                            ) : (
-                              <Badge variant="success">In Stock</Badge>
-                            )}
+                            {(() => {
+                              const count = p.manageStock ? (p.stockQuantity ?? 0) : 0;
+                              if (isOut) {
+                                return <Badge variant="destructive">Out of Stock ({count})</Badge>;
+                              }
+                              if (stockOf(p) === 'backorder') {
+                                return <Badge variant="warning">On Backorder ({count})</Badge>;
+                              }
+                              if (isLow) {
+                                return <Badge variant="warning">Low Stock ({count})</Badge>;
+                              }
+                              return <Badge variant="success">In Stock ({count})</Badge>;
+                            })()}
                           </TableCell>
                           <TableCell className="text-right">
                             <Button
                               size="sm"
                               variant="outline"
-                              onClick={() => openAdjustModal(p)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openAdjustModal(p);
+                              }}
                               className="gap-1.5 text-xs bg-white text-slate-700 hover:text-red-600 hover:border-red-300"
                             >
                               <Edit3 className="h-3.5 w-3.5" />
@@ -700,65 +699,20 @@ export function InventoryPage() {
           open={!!selectedProduct}
           onOpenChange={(open) => !open && setSelectedProduct(null)}
         >
-          <DialogContent className="sm:max-w-[450px]">
+          <DialogContent className="sm:max-w-[400px]">
             <DialogHeader>
               <DialogTitle className="text-base font-semibold flex items-center gap-2">
                 <Boxes className="h-5 w-5 text-red-600" />
-                <span>Adjust Stock: {selectedProduct.name}</span>
+                <span>Update Stock: {selectedProduct.name}</span>
               </DialogTitle>
               <DialogDescription className="text-xs">
-                Current stock on hand: <strong className="text-slate-800">{selectedProduct.manageStock ? `${selectedProduct.stockQuantity} units` : 'not tracked'}</strong> (SKU: {selectedProduct.sku})
+                Current stock: <strong className="text-slate-800">{selectedProduct.manageStock ? (selectedProduct.stockQuantity ?? 0) : 0} units</strong>
               </DialogDescription>
             </DialogHeader>
 
-            <div className="space-y-4 py-2 text-xs">
+            <div className="space-y-3 py-2 text-xs">
               <div className="space-y-1.5">
-                <label className="font-semibold text-slate-700">Adjustment Action</label>
-                <div className="grid grid-cols-3 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setAdjustType('set')}
-                    className={`py-2 px-3 rounded-md font-medium border text-xs transition-colors ${
-                      adjustType === 'set'
-                        ? 'bg-red-50 border-red-600 text-red-600 font-semibold'
-                        : 'border-slate-200 text-slate-700 hover:bg-slate-50'
-                    }`}
-                  >
-                    Set Exact Qty
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setAdjustType('add')}
-                    className={`py-2 px-3 rounded-md font-medium border text-xs transition-colors ${
-                      adjustType === 'add'
-                        ? 'bg-emerald-50 border-emerald-600 text-emerald-600 font-semibold'
-                        : 'border-slate-200 text-slate-700 hover:bg-slate-50'
-                    }`}
-                  >
-                    + Add Inflow
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setAdjustType('subtract')}
-                    className={`py-2 px-3 rounded-md font-medium border text-xs transition-colors ${
-                      adjustType === 'subtract'
-                        ? 'bg-amber-50 border-amber-600 text-amber-600 font-semibold'
-                        : 'border-slate-200 text-slate-700 hover:bg-slate-50'
-                    }`}
-                  >
-                    - Deduct
-                  </button>
-                </div>
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="font-semibold text-slate-700">
-                  {adjustType === 'set'
-                    ? 'New Total Quantity'
-                    : adjustType === 'add'
-                    ? 'Quantity to Add'
-                    : 'Quantity to Deduct'}
-                </label>
+                <label className="font-semibold text-slate-700">Stock Units</label>
                 <Input
                   type="number"
                   min="0"
@@ -776,15 +730,6 @@ export function InventoryPage() {
                   </p>
                 )}
               </div>
-
-              <div className="space-y-1.5">
-                <label className="font-semibold text-slate-700">Reason / Reference Note</label>
-                <Input
-                  placeholder="e.g. Supplier PO #492, Cycle count audit, Damaged goods"
-                  value={adjustNote}
-                  onChange={(e) => setAdjustNote(e.target.value)}
-                />
-              </div>
             </div>
 
             <DialogFooter>
@@ -800,12 +745,19 @@ export function InventoryPage() {
                 onClick={handleApplyAdjustment}
                 className="bg-red-600 hover:bg-red-700 text-white"
               >
-                Confirm Adjustment
+                Save Stock
               </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
       )}
+
+      {/* Product Quick View / Detail Modal */}
+      <ProductDetailModal
+        product={viewProduct}
+        open={productModalOpen}
+        onOpenChange={setProductModalOpen}
+      />
     </div>
   );
 }

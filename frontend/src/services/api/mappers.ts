@@ -167,6 +167,9 @@ export function mapBackendOrder(o: BackendOrder): Order {
     taxTotal,
     total,
     refundedTotal: num(o.refunded_total) ?? 0,
+    courierName: o.courier_name ?? undefined,
+    trackingNumber: o.tracking_number ?? undefined,
+    dispatchedAt: o.dispatched_at ?? undefined,
     // The customer's own checkout note comes with the order; the rest are loaded on the detail page.
     notes: o.customer_note
       ? [

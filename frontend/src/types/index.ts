@@ -84,6 +84,7 @@ export type OrderStatus =
   | 'pending'
   | 'processing'
   | 'on-hold'
+  | 'dispatch'
   | 'completed'
   | 'cancelled'
   | 'refunded'
@@ -160,6 +161,9 @@ export interface Order {
   total: number;
   /** Refunded so far, as WooCommerce reports it on the order. */
   refundedTotal: number;
+  courierName?: string;
+  trackingNumber?: string;
+  dispatchedAt?: string;
   notes: OrderNote[];
   refunds: OrderRefund[];
 }

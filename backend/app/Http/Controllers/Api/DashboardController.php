@@ -20,7 +20,7 @@ use OpenApi\Attributes as OA;
 class DashboardController extends Controller
 {
     /** Statuses that count as "sales". */
-    private const PAID = ['completed', 'processing'];
+    private const PAID = ['completed', 'processing', 'dispatch'];
 
     #[OA\Get(
         path: '/api/v1/dashboard/summary',

@@ -195,11 +195,11 @@ export function ProductFormPage() {
       if (isEditing && id) {
         await updateProduct(id, input);
         toast.success('Product updated successfully!');
-        navigate(`/products/${id}`);
+        navigate('/products');
       } else {
-        const createdId = await createProduct(input);
+        await createProduct(input);
         toast.success('Product created successfully!');
-        navigate(createdId ? `/products/${createdId}` : '/products');
+        navigate('/products');
       }
     } catch (err) {
       toast.error(getErrorMessage(err));

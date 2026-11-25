@@ -113,6 +113,9 @@ export interface BackendOrder {
   woo_created_at: string | null;
   woo_paid_at: string | null;
   woo_completed_at: string | null;
+  courier_name?: string | null;
+  tracking_number?: string | null;
+  dispatched_at?: string | null;
   items?: BackendOrderItem[];
   billing?: BackendAddress;
   shipping?: BackendAddress;

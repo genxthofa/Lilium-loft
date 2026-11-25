@@ -212,8 +212,19 @@ export const ordersApi = {
     return apiClient<BackendOrder>(`/orders/${id}`);
   },
 
-  async setStatus(id: number | string, status: string): Promise<BackendOrder> {
-    return apiClient<BackendOrder>(`/orders/${id}/status`, { method: 'PUT', body: json({ status }) });
+  async setStatus(
+    id: number | string,
+    status: string,
+    dispatchInfo?: { courierName?: string; trackingNumber?: string }
+  ): Promise<BackendOrder> {
+    return apiClient<BackendOrder>(`/orders/${id}/status`, {
+      method: 'PUT',
+      body: json({
+        status,
+        ...(dispatchInfo?.courierName ? { courier_name: dispatchInfo.courierName } : {}),
+        ...(dispatchInfo?.trackingNumber ? { tracking_number: dispatchInfo.trackingNumber } : {}),
+      }),
+    });
   },
 
   async notes(id: number | string): Promise<BackendOrderNote[]> {

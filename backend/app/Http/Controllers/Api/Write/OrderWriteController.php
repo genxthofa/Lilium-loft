@@ -19,7 +19,7 @@ use OpenApi\Attributes as OA;
 
 class OrderWriteController extends Controller
 {
-    public const STATUSES = ['pending', 'processing', 'on-hold', 'completed', 'cancelled', 'refunded', 'failed'];
+    public const STATUSES = ['pending', 'processing', 'on-hold', 'dispatch', 'completed', 'cancelled', 'refunded', 'failed'];
 
     public function __construct(
         private WooWriter $writer,
@@ -118,10 +118,43 @@ class OrderWriteController extends Controller
     public function status(Request $request, int $id): JsonResponse
     {
         $order = WooOrder::findOrFail($id);
-        $data = $request->validate(['status' => 'required|in:'.implode(',', self::STATUSES)]);
+        $data = $request->validate([
+            'status' => 'required|in:'.implode(',', self::STATUSES),
+            'courier_name' => 'nullable|string|max:255',
+            'tracking_number' => 'nullable|string|max:255',
+        ]);
 
-        $this->writer->run('orders', 'status', $order->woo_id, $data, ['status' => $order->status], $request->user(), $request->ip(),
-            fn (WooWriteClient $c) => $c->put("orders/{$order->woo_id}", $data));
+        $isDispatch = $data['status'] === 'dispatch';
+        $wooStatus = $isDispatch ? 'processing' : $data['status'];
+
+        $wooPayload = ['status' => $wooStatus];
+        $meta = [];
+        if ($isDispatch) {
+            $meta[] = ['key' => '_order_dispatched', 'value' => 'yes'];
+            if (! empty($data['courier_name'])) {
+                $meta[] = ['key' => '_courier_name', 'value' => $data['courier_name']];
+            }
+            if (! empty($data['tracking_number'])) {
+                $meta[] = ['key' => '_tracking_number', 'value' => $data['tracking_number']];
+            }
+        } elseif ($order->status === 'dispatch') {
+            $meta[] = ['key' => '_order_dispatched', 'value' => 'no'];
+        }
+        if ($meta !== []) {
+            $wooPayload['meta_data'] = $meta;
+        }
+
+        $this->writer->run('orders', 'status', $order->woo_id, $wooPayload, ['status' => $order->status], $request->user(), $request->ip(),
+            fn (WooWriteClient $c) => $c->put("orders/{$order->woo_id}", $wooPayload));
+
+        if ($isDispatch) {
+            $order->update([
+                'status' => 'dispatch',
+                'courier_name' => $data['courier_name'] ?? $order->courier_name,
+                'tracking_number' => $data['tracking_number'] ?? $order->tracking_number,
+                'dispatched_at' => $order->dispatched_at ?? now(),
+            ]);
+        }
 
         return response()->json($this->refreshed($order));
     }

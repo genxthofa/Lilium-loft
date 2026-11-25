@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { toast } from 'sonner';
 import {
   Product,
   ProductType,
@@ -178,6 +179,15 @@ interface ProductStore {
   adjustStock: (id: string, quantity: number, type: 'set' | 'add' | 'subtract') => Promise<void>;
 }
 
+function notifyLiveStoreSync(title: string, description: string) {
+  useBackendSyncStore.getState().refreshDashboard().catch(() => {});
+  useUIStore.getState().fetchNotifications().catch(() => {});
+  toast.success(title, {
+    id: 'live-action-popup',
+    description,
+  });
+}
+
 export const useProductStore = create<ProductStore>((set, get) => ({
   products: [],
   isLoading: false,
@@ -199,6 +209,7 @@ export const useProductStore = create<ProductStore>((set, get) => ({
     const payload = buildProductPayload(input, null, useCategoryStore.getState().categories);
     const created = await productsApi.create(payload);
     await get().fetchProducts();
+    notifyLiveStoreSync('Product Created', `"${input.name}" added live to store.`);
     return created?.id ? String(created.id) : null;
   },
   updateProduct: async (id, input) => {
@@ -208,10 +219,13 @@ export const useProductStore = create<ProductStore>((set, get) => ({
       await productsApi.update(id, payload);
     }
     await get().fetchProducts();
+    notifyLiveStoreSync('Product Updated', `"${input.name || prev?.name || 'Product'}" updated live.`);
   },
   deleteProduct: async (id) => {
+    const prev = get().products.find((p) => p.id === id);
     await productsApi.remove(id);
     await get().fetchProducts();
+    notifyLiveStoreSync('Product Deleted', `"${prev?.name || 'Product'}" removed live from store.`);
   },
   adjustStock: async (id, quantity, type) => {
     const product = get().products.find((p) => p.id === id);
@@ -228,6 +242,7 @@ export const useProductStore = create<ProductStore>((set, get) => ({
       stock_status: next > 0 ? 'instock' : 'outofstock',
     });
     await get().fetchProducts();
+    notifyLiveStoreSync('Stock Updated', `"${product.name}" stock set to ${next} units.`);
   },
 }));
 
@@ -240,7 +255,11 @@ interface OrderStore {
   fetchOrders: (opts?: FetchOptions) => Promise<void>;
   /** Loads the notes and refunds recorded in WooCommerce for one order. */
   loadOrderDetails: (id: string) => Promise<void>;
-  updateOrderStatus: (id: string, status: OrderStatus) => Promise<void>;
+  updateOrderStatus: (
+    id: string,
+    status: OrderStatus,
+    dispatchInfo?: { courierName?: string; trackingNumber?: string }
+  ) => Promise<void>;
   addOrderNote: (orderId: string, content: string, isCustomerNote: boolean) => Promise<void>;
   refundOrder: (orderId: string, amount: number, reason: string) => Promise<void>;
 }
@@ -294,10 +313,12 @@ export const useOrderStore = create<OrderStore>((set, get) => {
         console.warn('Failed to load order notes/refunds:', err);
       }
     },
-    updateOrderStatus: async (id, status) => {
-      const updated = await ordersApi.setStatus(id, status);
-      replace(mapBackendOrder(updated));
+    updateOrderStatus: async (id, status, dispatchInfo) => {
+      const updated = await ordersApi.setStatus(id, status, dispatchInfo);
+      const mapped = mapBackendOrder(updated);
+      replace(mapped);
       await get().loadOrderDetails(id);
+      notifyLiveStoreSync('Order Updated', `Order #${mapped.orderNumber} status updated live.`);
     },
     addOrderNote: async (orderId, content, isCustomerNote) => {
       await ordersApi.addNote(orderId, content, isCustomerNote);
@@ -311,6 +332,7 @@ export const useOrderStore = create<OrderStore>((set, get) => {
         console.warn('Failed to refresh order after refund:', err);
       }
       await get().loadOrderDetails(orderId);
+      notifyLiveStoreSync('Order Updated', `Refund processed live for order.`);
     },
   };
 });
@@ -689,17 +711,41 @@ export interface NotificationItem {
   link?: string;
 }
 
+const GENERATED_INVOICES_KEY = 'lilium_generated_invoices';
+
+function loadGeneratedInvoices(): string[] {
+  try {
+    const raw = localStorage.getItem(GENERATED_INVOICES_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.map(String) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveGeneratedInvoices(ids: string[]) {
+  try {
+    localStorage.setItem(GENERATED_INVOICES_KEY, JSON.stringify(ids));
+  } catch {
+    // ignore quota errors
+  }
+}
+
 interface UIStore {
   sidebarCollapsed: boolean;
   mobileMenuOpen: boolean;
   searchOpen: boolean;
   isManualSyncing: boolean;
   notifications: NotificationItem[];
+  generatedInvoiceIds: string[];
   toggleSidebar: () => void;
   setSidebarCollapsed: (collapsed: boolean) => void;
   setMobileMenuOpen: (open: boolean) => void;
   setSearchOpen: (open: boolean) => void;
   setIsManualSyncing: (val: boolean) => void;
+  generateInvoice: (orderId: string | number) => void;
+  generateBulkInvoices: (orderIds: Array<string | number>) => void;
+  isInvoiceGenerated: (orderId: string | number) => boolean;
   fetchNotifications: () => Promise<void>;
   markNotificationRead: (id: string) => Promise<void>;
   markAllNotificationsRead: () => Promise<void>;
@@ -711,11 +757,38 @@ export const useUIStore = create<UIStore>((set, get) => ({
   searchOpen: false,
   isManualSyncing: false,
   notifications: [],
+  generatedInvoiceIds: loadGeneratedInvoices(),
   toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
   setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
   setMobileMenuOpen: (open) => set({ mobileMenuOpen: open }),
   setSearchOpen: (open) => set({ searchOpen: open }),
   setIsManualSyncing: (val) => set({ isManualSyncing: val }),
+  generateInvoice: (orderId) => {
+    const key = String(orderId);
+    const current = get().generatedInvoiceIds;
+    if (!current.includes(key)) {
+      const next = [...current, key];
+      saveGeneratedInvoices(next);
+      set({ generatedInvoiceIds: next });
+    }
+  },
+  generateBulkInvoices: (orderIds) => {
+    const current = new Set(get().generatedInvoiceIds);
+    let changed = false;
+    for (const id of orderIds) {
+      const key = String(id);
+      if (!current.has(key)) {
+        current.add(key);
+        changed = true;
+      }
+    }
+    if (changed) {
+      const next = Array.from(current);
+      saveGeneratedInvoices(next);
+      set({ generatedInvoiceIds: next });
+    }
+  },
+  isInvoiceGenerated: (orderId) => get().generatedInvoiceIds.includes(String(orderId)),
   fetchNotifications: async () => {
     try {
       const res = await notificationsApi.list();
@@ -796,6 +869,26 @@ export const useBackendSyncStore = create<BackendSyncState>((set, get) => ({
       await authApi.login(email, password);
       const user = await authApi.me();
       set({ currentUser: user });
+
+      // When an admin signs in, ensure all store permissions are enabled by default.
+      try {
+        let ws = await writeSettingsApi.get();
+        if (ws.can_manage) {
+          const keysToEnable: string[] = [];
+          if (!ws.master.enabled) keysToEnable.push(ws.master.key);
+          if (!ws.permanent_delete.enabled) keysToEnable.push(ws.permanent_delete.key);
+          for (const sw of ws.capabilities) {
+            if (!sw.enabled) keysToEnable.push(sw.key);
+          }
+          for (const key of keysToEnable) {
+            ws = await writeSettingsApi.set(key, true);
+          }
+          useWriteSettingsStore.setState({ data: ws });
+        }
+      } catch (err) {
+        console.warn('Could not auto-enable default admin permissions:', err);
+      }
+
       await get().syncAll();
       return true;
     } catch (err) {

@@ -56,7 +56,6 @@ export function MobileNav() {
     { title: 'Orders', href: '/orders', icon: ShoppingCart },
     { title: 'Customers', href: '/customers', icon: Users },
     { title: 'Inventory', href: '/inventory', icon: Boxes },
-    { title: 'Coupons', href: '/coupons', icon: TicketPercent },
     { title: 'Reports', href: '/reports', icon: BarChart3 },
     { title: 'Shipping', href: '/shipping', icon: Truck },
     { title: 'Payments', href: '/payments', icon: CreditCard },

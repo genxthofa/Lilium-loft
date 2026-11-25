@@ -148,7 +148,9 @@ export function CustomerDetailPage() {
       case 'completed':
         return <Badge variant="success">Completed</Badge>;
       case 'processing':
-        return <Badge variant="info">Processing</Badge>;
+        return <Badge variant="info">Order Placed</Badge>;
+      case 'dispatch':
+        return <Badge variant="purple">Dispatched</Badge>;
       case 'on-hold':
         return <Badge variant="warning">On-Hold</Badge>;
       case 'pending':

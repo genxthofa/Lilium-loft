@@ -16,7 +16,7 @@ class SalesStats extends StatsOverviewWidget
 
     protected function getStats(): array
     {
-        $paid = ['completed', 'processing'];
+        $paid = ['completed', 'processing', 'dispatch'];
         $now = now();
 
         $current = WooOrder::whereIn('status', $paid)->where('woo_created_at', '>=', $now->copy()->subDays(30));

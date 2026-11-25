@@ -27,6 +27,7 @@ class WooOrder extends Model
             'woo_created_at' => 'datetime',
             'woo_paid_at' => 'datetime',
             'woo_completed_at' => 'datetime',
+            'dispatched_at' => 'datetime',
             'raw' => 'array',
         ];
     }

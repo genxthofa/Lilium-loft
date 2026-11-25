@@ -18,7 +18,7 @@ class RevenueChart extends ChartWidget
     {
         $from = now()->subDays(29)->startOfDay();
 
-        $byDay = WooOrder::whereIn('status', ['completed', 'processing'])
+        $byDay = WooOrder::whereIn('status', ['completed', 'processing', 'dispatch'])
             ->where('woo_created_at', '>=', $from)
             ->selectRaw('DATE(woo_created_at) as d, SUM(total) as t')
             ->groupBy('d')->pluck('t', 'd');

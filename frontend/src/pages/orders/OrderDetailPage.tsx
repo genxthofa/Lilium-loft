@@ -21,6 +21,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { InvoiceModal } from '@/components/orders/InvoiceModal';
+import { DispatchModal } from '@/components/orders/DispatchModal';
 import {
   Select,
   SelectContent,
@@ -36,7 +37,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { useOrderStore, useCustomerStore, useProductStore } from '@/store';
+import { useOrderStore, useCustomerStore, useProductStore, useUIStore } from '@/store';
 import { OrderStatus } from '@/types';
 import { formatCurrency, formatDateTime } from '@/utils/formatters';
 import { getErrorMessage } from '@/utils/errors';
@@ -50,6 +51,7 @@ export function OrderDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { orders, loaded: ordersLoaded, loadOrderDetails, updateOrderStatus, addOrderNote, refundOrder } = useOrderStore();
+  const { generatedInvoiceIds, generateInvoice } = useUIStore();
 
   const order = orders.find((o) => o.id === id);
   const customers = useCustomerStore((st) => st.customers);
@@ -69,6 +71,7 @@ export function OrderDetailPage() {
   // Refund Modal State
   const [refundModalOpen, setRefundModalOpen] = useState(false);
   const [invoiceModalOpen, setInvoiceModalOpen] = useState(false);
+  const [dispatchModalOpen, setDispatchModalOpen] = useState(false);
   const [refundAmount, setRefundAmount] = useState<number>(0);
   const [refundReason, setRefundReason] = useState('');
   const [refundErrors, setRefundErrors] = useState<{ amount?: string; reason?: string }>({});
@@ -91,11 +94,26 @@ export function OrderDetailPage() {
   const remainingRefundable = Math.max(0, order.total - totalRefunded);
 
   const handleStatusChange = async (newStatus: OrderStatus) => {
+    if (newStatus === 'dispatch') {
+      setDispatchModalOpen(true);
+      return;
+    }
+
     try {
       await updateOrderStatus(order.id, newStatus);
       toast.success(`Order status changed to ${newStatus}.`);
     } catch (err) {
       toast.error(getErrorMessage(err));
+    }
+  };
+
+  const handleConfirmDispatch = async (courierName: string, trackingNumber: string) => {
+    try {
+      await updateOrderStatus(order.id, 'dispatch', { courierName, trackingNumber });
+      toast.success('Order marked as Dispatched.');
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+      throw err;
     }
   };
 
@@ -144,7 +162,9 @@ export function OrderDetailPage() {
       case 'completed':
         return <Badge variant="success">Completed</Badge>;
       case 'processing':
-        return <Badge variant="info">Processing</Badge>;
+        return <Badge variant="info">Order Placed</Badge>;
+      case 'dispatch':
+        return <Badge variant="purple">Dispatched</Badge>;
       case 'on-hold':
         return <Badge variant="warning">On-Hold</Badge>;
       case 'pending':
@@ -198,7 +218,8 @@ export function OrderDetailPage() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="processing">Processing</SelectItem>
+                <SelectItem value="processing">Order Placed</SelectItem>
+                <SelectItem value="dispatch">Dispatched</SelectItem>
                 <SelectItem value="completed">Completed</SelectItem>
                 <SelectItem value="on-hold">On-Hold</SelectItem>
                 <SelectItem value="pending">Pending Payment</SelectItem>
@@ -212,11 +233,20 @@ export function OrderDetailPage() {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => setInvoiceModalOpen(true)}
+            onClick={() => {
+              if (!generatedInvoiceIds.includes(String(order.id))) {
+                generateInvoice(order.id);
+              }
+              setInvoiceModalOpen(true);
+            }}
             className="gap-1.5 bg-white text-slate-700 border-slate-200 hover:border-red-300 hover:text-red-700 shrink-0"
           >
             <FileText className="h-4 w-4 text-red-600" />
-            <span>Invoice</span>
+            <span>
+              {generatedInvoiceIds.includes(String(order.id))
+                ? 'View Invoice'
+                : 'Generate Invoice'}
+            </span>
           </Button>
 
           {remainingRefundable > 0 && order.status !== 'cancelled' && (
@@ -239,6 +269,31 @@ export function OrderDetailPage() {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Left Columns: Items, Totals, Addresses (8 cols on lg/xl) */}
         <div className="lg:col-span-8 space-y-6">
+          {(order.courierName || order.trackingNumber) && (
+            <Card className="border-indigo-100 bg-indigo-50/40">
+              <CardHeader className="pb-2.5 border-b border-indigo-100/70">
+                <CardTitle className="text-sm font-semibold text-indigo-950 flex items-center gap-2">
+                  <Truck className="h-4 w-4 text-indigo-600" />
+                  <span>Dispatch & Tracking Details</span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pt-3 grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                {order.courierName && (
+                  <div>
+                    <div className="text-xs font-medium text-slate-500">Courier Name</div>
+                    <div className="font-semibold text-slate-900 mt-0.5">{order.courierName}</div>
+                  </div>
+                )}
+                {order.trackingNumber && (
+                  <div>
+                    <div className="text-xs font-medium text-slate-500">Tracking Number</div>
+                    <div className="font-mono font-semibold text-slate-900 mt-0.5">{order.trackingNumber}</div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
           {/* Ordered Items Card */}
           <Card>
             <CardHeader className="pb-3 border-b border-slate-100">
@@ -674,6 +729,16 @@ export function OrderDetailPage() {
         order={order}
         open={invoiceModalOpen}
         onOpenChange={setInvoiceModalOpen}
+      />
+
+      {/* Dispatch Tracking Modal */}
+      <DispatchModal
+        open={dispatchModalOpen}
+        onOpenChange={setDispatchModalOpen}
+        orderNumber={order.orderNumber}
+        initialCourierName={order.courierName}
+        initialTrackingNumber={order.trackingNumber}
+        onConfirm={handleConfirmDispatch}
       />
     </div>
   );

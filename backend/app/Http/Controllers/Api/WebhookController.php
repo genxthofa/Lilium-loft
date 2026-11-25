@@ -8,6 +8,7 @@ use App\Models\WooWebhookDelivery;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use OpenApi\Attributes as OA;
+use Throwable;
 
 /**
  * Receives webhooks FROM WooCommerce. Public (no JWT) but every call must carry a valid
@@ -84,8 +85,14 @@ class WebhookController extends Controller
             'status' => 'received',
         ]);
 
-        ProcessWooWebhook::dispatch($delivery->id, $resource, $event, $payload);
+        try {
+            ProcessWooWebhook::dispatchSync($delivery->id, $resource, $event, $payload);
 
-        return response()->json(['status' => 'queued']);
+            return response()->json(['status' => 'processed']);
+        } catch (Throwable) {
+            ProcessWooWebhook::dispatch($delivery->id, $resource, $event, $payload);
+
+            return response()->json(['status' => 'queued']);
+        }
     }
 }

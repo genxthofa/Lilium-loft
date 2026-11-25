@@ -34,7 +34,8 @@ import {
 } from '@/components/ui/dialog';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { usePaymentStore, useOrderStore } from '@/store';
-import { PaymentGateway, Transaction } from '@/types';
+import { Order, PaymentGateway, Transaction } from '@/types';
+import { OrderDetailModal } from '@/components/orders/OrderDetailModal';
 import { formatCurrency, formatDateTime } from '@/utils/formatters';
 import { getErrorMessage } from '@/utils/errors';
 import { toast } from 'sonner';
@@ -72,6 +73,8 @@ export function PaymentsPage() {
 
   const [activeTab, setActiveTab] = useState('gateways');
   const [configModalGateway, setConfigModalGateway] = useState<PaymentGateway | null>(null);
+  const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
+  const [viewOrder, setViewOrder] = useState<Order | null>(null);
   const [saving, setSaving] = useState(false);
 
   // Modal form state
@@ -270,7 +273,8 @@ export function PaymentsPage() {
                     {transactions.map((tx) => (
                       <div
                         key={tx.id}
-                        className="p-3.5 sm:p-4 rounded-xl border border-slate-200/80 bg-white shadow-sm hover:border-slate-300 transition-all space-y-2"
+                        onClick={() => setSelectedTx(tx)}
+                        className="p-3.5 sm:p-4 rounded-xl border border-slate-200/80 bg-white shadow-sm hover:border-slate-300 transition-all space-y-2 cursor-pointer"
                       >
                         <div className="flex items-center justify-between">
                           <span className="font-bold font-mono text-xs text-slate-900">
@@ -321,7 +325,11 @@ export function PaymentsPage() {
                       </TableHeader>
                       <TableBody>
                         {transactions.map((tx) => (
-                          <TableRow key={tx.id}>
+                          <TableRow
+                            key={tx.id}
+                            onClick={() => setSelectedTx(tx)}
+                            className="cursor-pointer hover:bg-slate-50/80 transition-colors"
+                          >
                             <TableCell className="font-mono text-xs text-slate-700 whitespace-nowrap">
                               {tx.transactionReference || '—'}
                             </TableCell>
@@ -434,6 +442,106 @@ export function PaymentsPage() {
           </DialogContent>
         </Dialog>
       )}
+
+      {/* Transaction View Modal */}
+      {selectedTx && (
+        <Dialog
+          open={!!selectedTx}
+          onOpenChange={(open) => !open && setSelectedTx(null)}
+        >
+          <DialogContent className="sm:max-w-[480px]">
+            <DialogHeader className="pb-3 border-b border-slate-100">
+              <div className="flex items-center justify-between gap-2 pr-6">
+                <div>
+                  <DialogTitle className="text-base font-bold text-slate-900">
+                    Transaction Details
+                  </DialogTitle>
+                  <DialogDescription className="text-xs text-slate-500 mt-0.5">
+                    Order #{selectedTx.orderNumber}
+                  </DialogDescription>
+                </div>
+                {getStatusBadge(selectedTx.status)}
+              </div>
+            </DialogHeader>
+
+            <div className="space-y-3 py-2 text-xs">
+              <div className="p-3.5 rounded-xl bg-slate-50/80 border border-slate-100 flex items-center justify-between">
+                <span className="text-slate-500 font-medium">Amount</span>
+                <span className="text-lg font-bold text-slate-900">
+                  {formatCurrency(selectedTx.amount, selectedTx.currency)}
+                </span>
+              </div>
+
+              <div className="rounded-xl border border-slate-100 divide-y divide-slate-100">
+                <div className="flex items-center justify-between px-3.5 py-2.5">
+                  <span className="text-slate-500">Reference ID</span>
+                  <span className="font-mono font-semibold text-slate-900">
+                    {selectedTx.transactionReference || '—'}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between px-3.5 py-2.5">
+                  <span className="text-slate-500">Order Number</span>
+                  <span className="font-mono font-semibold text-slate-900">
+                    #{selectedTx.orderNumber}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between px-3.5 py-2.5">
+                  <span className="text-slate-500">Customer</span>
+                  <span className="font-semibold text-slate-900">
+                    {selectedTx.customerName}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between px-3.5 py-2.5">
+                  <span className="text-slate-500">Payment Gateway</span>
+                  <span className="font-medium text-slate-800">
+                    {selectedTx.paymentMethod || '—'}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between px-3.5 py-2.5">
+                  <span className="text-slate-500">Order Date</span>
+                  <span className="text-slate-700">
+                    {formatDateTime(selectedTx.date)}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <DialogFooter className="pt-2 border-t border-slate-100 gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setSelectedTx(null)}
+              >
+                Close
+              </Button>
+              {(() => {
+                const linkedOrder = orders.find((o) => String(o.id) === String(selectedTx.orderId));
+                if (!linkedOrder) return null;
+                return (
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      setSelectedTx(null);
+                      setViewOrder(linkedOrder);
+                    }}
+                    className="gap-1.5 bg-red-600 hover:bg-red-700 text-white"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" />
+                    <span>View Order</span>
+                  </Button>
+                );
+              })()}
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* Linked Order Quick View Modal */}
+      <OrderDetailModal
+        order={viewOrder}
+        open={!!viewOrder}
+        onOpenChange={(open) => !open && setViewOrder(null)}
+      />
     </div>
   );
 }

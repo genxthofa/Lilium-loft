@@ -50,6 +50,7 @@ import { formatCurrency, formatDate } from '@/utils/formatters';
 import { initials } from '@/utils/initials';
 import { getErrorMessage } from '@/utils/errors';
 import { DeleteCustomerDialog } from '@/components/customers/DeleteCustomerDialog';
+import { CustomerDetailModal } from '@/components/customers/CustomerDetailModal';
 import { toast } from 'sonner';
 
 export function CustomersListPage() {
@@ -59,6 +60,8 @@ export function CustomersListPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterActivity, setFilterActivity] = useState<'all' | 'with-orders' | 'no-orders'>('all');
   const [filterModalOpen, setFilterModalOpen] = useState(false);
+  const [selectedCustomerForModal, setSelectedCustomerForModal] = useState<Customer | null>(null);
+  const [customerModalOpen, setCustomerModalOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 10;
 
@@ -417,7 +420,10 @@ export function CustomersListPage() {
                 {paginatedCustomers.map((customer) => (
                   <div
                     key={customer.id}
-                    onClick={() => navigate(`/customers/${customer.id}`)}
+                    onClick={() => {
+                      setSelectedCustomerForModal(customer);
+                      setCustomerModalOpen(true);
+                    }}
                     className="p-3.5 sm:p-4 rounded-xl border border-slate-200/80 bg-white shadow-sm hover:border-slate-300 hover:shadow cursor-pointer transition-all"
                   >
                     <div className="flex items-center justify-between gap-3">
@@ -492,7 +498,10 @@ export function CustomersListPage() {
                     {paginatedCustomers.map((customer) => (
                       <TableRow
                         key={customer.id}
-                        onClick={() => navigate(`/customers/${customer.id}`)}
+                        onClick={() => {
+                          setSelectedCustomerForModal(customer);
+                          setCustomerModalOpen(true);
+                        }}
                         className="cursor-pointer hover:bg-slate-50/80 transition-colors"
                       >
                         <TableCell>
@@ -668,6 +677,13 @@ export function CustomersListPage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* Customer Quick View / Detail Modal */}
+      <CustomerDetailModal
+        customer={selectedCustomerForModal}
+        open={customerModalOpen}
+        onOpenChange={setCustomerModalOpen}
+      />
     </div>
   );
 }

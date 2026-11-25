@@ -50,6 +50,7 @@ import { Product } from '@/types';
 import { formatCurrency, formatMoney } from '@/utils/formatters';
 import { isOnSale } from '@/utils/stock';
 import { ProductStatusBadge } from '@/components/products/ProductStatusBadge';
+import { ProductDetailModal } from '@/components/products/ProductDetailModal';
 import { useStockState } from '@/hooks/useStockState';
 import { getErrorMessage } from '@/utils/errors';
 import { toast } from 'sonner';
@@ -60,21 +61,36 @@ export function ProductsListPage() {
   const { products, deleteProduct } = useProductStore();
 
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [selectedStock, setSelectedStock] = useState<string>('all');
   const [selectedType, setSelectedType] = useState<string>('all');
   const [currentPage, setCurrentPage] = useState(1);
   const [filterModalOpen, setFilterModalOpen] = useState(false);
+  const [selectedProductForModal, setSelectedProductForModal] = useState<Product | null>(null);
+  const [productModalOpen, setProductModalOpen] = useState(false);
   const pageSize = 10;
+
+  const statusCounts = useMemo(() => {
+    return {
+      all: products.length,
+      publish: products.filter((p) => p.status === 'publish').length,
+      draft: products.filter((p) => p.status === 'draft').length,
+      pending: products.filter((p) => p.status === 'pending').length,
+      private: products.filter((p) => p.status === 'private').length,
+    };
+  }, [products]);
 
   const hasActiveFilters = Boolean(
     searchTerm.trim() ||
+    selectedStatus !== 'all' ||
     selectedCategory !== 'all' ||
     selectedStock !== 'all' ||
     selectedType !== 'all'
   );
 
   const activeFilterCount =
+    (selectedStatus !== 'all' ? 1 : 0) +
     (selectedCategory !== 'all' ? 1 : 0) +
     (selectedStock !== 'all' ? 1 : 0) +
     (selectedType !== 'all' ? 1 : 0) +
@@ -82,6 +98,7 @@ export function ProductsListPage() {
 
   const handleClearFilters = () => {
     setSearchTerm('');
+    setSelectedStatus('all');
     setSelectedCategory('all');
     setSelectedStock('all');
     setSelectedType('all');
@@ -116,10 +133,11 @@ export function ProductsListPage() {
         (selectedStock === 'onbackorder' && stockOf(p) === 'backorder');
 
       const matchesType = selectedType === 'all' || p.type === selectedType;
+      const matchesStatus = selectedStatus === 'all' || p.status === selectedStatus;
 
-      return matchesSearch && matchesCat && matchesStock && matchesType;
+      return matchesSearch && matchesCat && matchesStock && matchesType && matchesStatus;
     });
-  }, [products, searchTerm, selectedCategory, selectedStock, selectedType, stockOf]);
+  }, [products, searchTerm, selectedStatus, selectedCategory, selectedStock, selectedType, stockOf]);
 
   const totalPages = Math.ceil(filteredProducts.length / pageSize);
   const paginatedProducts = filteredProducts.slice(
@@ -182,6 +200,42 @@ export function ProductsListPage() {
             <span>Add Product</span>
           </Button>
         </div>
+      </div>
+
+      {/* Status Filter Tabs */}
+      <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
+        {[
+          { key: 'all', label: 'All Products', count: statusCounts.all },
+          { key: 'publish', label: 'Published', count: statusCounts.publish },
+          { key: 'draft', label: 'Draft', count: statusCounts.draft },
+          { key: 'pending', label: 'Pending', count: statusCounts.pending },
+          { key: 'private', label: 'Private', count: statusCounts.private },
+        ].map((tab) => {
+          const isActive = selectedStatus === tab.key;
+          return (
+            <button
+              key={tab.key}
+              onClick={() => {
+                setSelectedStatus(tab.key);
+                setCurrentPage(1);
+              }}
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold whitespace-nowrap transition-all ${
+                isActive
+                  ? 'bg-red-600 text-white shadow-sm'
+                  : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200/80'
+              }`}
+            >
+              <span>{tab.label}</span>
+              <span
+                className={`px-1.5 py-0.2 rounded-full text-[10px] ${
+                  isActive ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-700'
+                }`}
+              >
+                {tab.count}
+              </span>
+            </button>
+          );
+        })}
       </div>
 
       {/* Filter and Search Bar */}
@@ -466,13 +520,16 @@ export function ProductsListPage() {
                 {paginatedProducts.map((product) => (
                   <div
                     key={product.id}
-                    className="p-3.5 sm:p-4 rounded-xl border border-slate-200/80 bg-white shadow-sm hover:border-slate-300 transition-all"
+                    onClick={() => {
+                      setSelectedProductForModal(product);
+                      setProductModalOpen(true);
+                    }}
+                    className="p-3.5 sm:p-4 rounded-xl border border-slate-200/80 bg-white shadow-sm hover:border-slate-300 transition-all cursor-pointer"
                   >
                     <div className="flex items-start gap-3">
                       {/* Thumbnail */}
                       <div
-                        onClick={() => navigate(`/products/${product.id}`)}
-                        className="h-16 w-16 rounded-lg bg-slate-100 overflow-hidden border border-slate-200 shrink-0 cursor-pointer"
+                        className="h-16 w-16 rounded-lg bg-slate-100 overflow-hidden border border-slate-200 shrink-0"
                       >
                         {product.images[0] ? (
                           <img
@@ -490,43 +547,47 @@ export function ProductsListPage() {
                       {/* Content */}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-start justify-between gap-2">
-                          <button
-                            onClick={() => navigate(`/products/${product.id}`)}
+                          <span
                             className="text-left font-semibold text-sm text-slate-900 hover:text-red-600 line-clamp-2 leading-snug"
                           >
                             {product.name}
-                          </button>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 -mr-1">
-                                <MoreVertical className="h-4 w-4 text-slate-500" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem
-                                onClick={() => navigate(`/products/${product.id}`)}
-                                className="gap-2"
-                              >
-                                <Eye className="h-4 w-4 text-slate-500" />
-                                <span>View Details</span>
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onClick={() => navigate(`/products/${product.id}/edit`)}
-                                className="gap-2"
-                              >
-                                <Edit className="h-4 w-4 text-slate-500" />
-                                <span>Edit Product</span>
-                              </DropdownMenuItem>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem
-                                onClick={() => setProductToDelete(product)}
-                                className="gap-2 text-red-600 focus:text-red-700 focus:bg-red-50"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                                <span>Delete</span>
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
+                          </span>
+                          <div onClick={(e) => e.stopPropagation()}>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 -mr-1">
+                                  <MoreVertical className="h-4 w-4 text-slate-500" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem
+                                  onClick={() => {
+                                    setSelectedProductForModal(product);
+                                    setProductModalOpen(true);
+                                  }}
+                                  className="gap-2 cursor-pointer"
+                                >
+                                  <Eye className="h-4 w-4 text-slate-500" />
+                                  <span>Quick View</span>
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={() => navigate(`/products/${product.id}/edit`)}
+                                  className="gap-2 cursor-pointer"
+                                >
+                                  <Edit className="h-4 w-4 text-slate-500" />
+                                  <span>Edit Product</span>
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                  onClick={() => setProductToDelete(product)}
+                                  className="gap-2 text-red-600 focus:text-red-700 focus:bg-red-50 cursor-pointer"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                  <span>Delete</span>
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
                         </div>
 
                         <div className="flex items-center gap-1.5 mt-1 flex-wrap">
@@ -593,8 +654,6 @@ export function ProductsListPage() {
                     <TableRow>
                       <TableHead className="w-16">Image</TableHead>
                       <TableHead>Product Name</TableHead>
-                      <TableHead>SKU</TableHead>
-                      <TableHead>Type</TableHead>
                       <TableHead>Stock</TableHead>
                       <TableHead>Price</TableHead>
                       <TableHead>Categories</TableHead>
@@ -604,7 +663,14 @@ export function ProductsListPage() {
                   </TableHeader>
                   <TableBody>
                     {paginatedProducts.map((product) => (
-                      <TableRow key={product.id}>
+                      <TableRow
+                        key={product.id}
+                        onClick={() => {
+                          setSelectedProductForModal(product);
+                          setProductModalOpen(true);
+                        }}
+                        className="cursor-pointer hover:bg-slate-50/80 transition-colors"
+                      >
                         {/* Thumbnail */}
                         <TableCell>
                           <div className="h-11 w-11 rounded-lg bg-slate-100 overflow-hidden border border-slate-200 shrink-0">
@@ -624,33 +690,12 @@ export function ProductsListPage() {
 
                         {/* Name */}
                         <TableCell>
-                          <button
-                            onClick={() => navigate(`/products/${product.id}`)}
-                            className="text-left font-medium text-slate-900 hover:text-red-600 transition-colors line-clamp-1"
-                          >
+                          <span className="text-left font-medium text-slate-900 hover:text-red-600 transition-colors line-clamp-1">
                             {product.name}
-                          </button>
+                          </span>
                           <span className="text-[11px] text-slate-400 block mt-0.5">
                             Slug: {product.slug}
                           </span>
-                        </TableCell>
-
-                        {/* SKU */}
-                        <TableCell className="font-mono text-xs text-slate-600">
-                          {product.sku}
-                        </TableCell>
-
-                        {/* Type */}
-                        <TableCell>
-                          {product.type === 'variable' ? (
-                            <Badge variant="purple" className="text-[10px]">
-                              Variable
-                            </Badge>
-                          ) : (
-                            <Badge variant="secondary" className="text-[10px]">
-                              Simple
-                            </Badge>
-                          )}
                         </TableCell>
 
                         {/* Stock */}
@@ -689,7 +734,7 @@ export function ProductsListPage() {
                         </TableCell>
 
                         {/* Actions Menu */}
-                        <TableCell className="text-right">
+                        <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <Button variant="ghost" size="icon" className="h-8 w-8">
@@ -698,15 +743,18 @@ export function ProductsListPage() {
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
                               <DropdownMenuItem
-                                onClick={() => navigate(`/products/${product.id}`)}
-                                className="gap-2"
+                                onClick={() => {
+                                  setSelectedProductForModal(product);
+                                  setProductModalOpen(true);
+                                }}
+                                className="gap-2 cursor-pointer"
                               >
                                 <Eye className="h-4 w-4 text-slate-500" />
-                                <span>View Details</span>
+                                <span>Quick View</span>
                               </DropdownMenuItem>
                               <DropdownMenuItem
                                 onClick={() => navigate(`/products/${product.id}/edit`)}
-                                className="gap-2"
+                                className="gap-2 cursor-pointer"
                               >
                                 <Edit className="h-4 w-4 text-slate-500" />
                                 <span>Edit Product</span>
@@ -714,7 +762,7 @@ export function ProductsListPage() {
                               <DropdownMenuSeparator />
                               <DropdownMenuItem
                                 onClick={() => setProductToDelete(product)}
-                                className="gap-2 text-red-600 focus:text-red-700 focus:bg-red-50"
+                                className="gap-2 text-red-600 focus:text-red-700 focus:bg-red-50 cursor-pointer"
                               >
                                 <Trash2 className="h-4 w-4" />
                                 <span>Delete</span>
@@ -749,6 +797,13 @@ export function ProductsListPage() {
         description={`Move "${productToDelete?.name}" to the trash in WooCommerce? It will no longer be sold or shown in your store. It can be restored from the WooCommerce trash.`}
         confirmLabel="Move to trash"
         onConfirm={handleDelete}
+      />
+
+      {/* Product Quick View / Detail Modal */}
+      <ProductDetailModal
+        product={selectedProductForModal}
+        open={productModalOpen}
+        onOpenChange={setProductModalOpen}
       />
     </div>
   );

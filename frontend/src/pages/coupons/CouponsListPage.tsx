@@ -467,10 +467,17 @@ export function CouponsListPage() {
                   </TableHeader>
                   <TableBody>
                     {filteredCoupons.map((coupon) => (
-                      <TableRow key={coupon.id}>
+                      <TableRow
+                        key={coupon.id}
+                        onClick={() => openEditModal(coupon)}
+                        className="cursor-pointer hover:bg-slate-50/80 transition-colors"
+                      >
                         <TableCell>
                           <button
-                            onClick={() => handleCopyCode(coupon.code)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleCopyCode(coupon.code);
+                            }}
                             className="group flex items-center gap-1.5 font-mono font-bold text-sm bg-red-50 text-red-700 border border-red-200 px-2.5 py-1 rounded-md hover:bg-red-100 transition-colors"
                             title="Click to copy code"
                           >
@@ -514,7 +521,7 @@ export function CouponsListPage() {
                           )}
                         </TableCell>
 
-                        <TableCell className="text-right space-x-1">
+                        <TableCell className="text-right space-x-1" onClick={(e) => e.stopPropagation()}>
                           <Button
                             variant="ghost"
                             size="icon"

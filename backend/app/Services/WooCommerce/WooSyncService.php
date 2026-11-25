@@ -164,9 +164,19 @@ class WooSyncService
         return DB::transaction(function () use ($o) {
             $b = $o['billing'] ?? [];
             $s = $o['shipping'] ?? [];
+            $meta = collect($o['meta_data'] ?? [])->mapWithKeys(
+                fn ($m) => isset($m['key']) ? [$m['key'] => $m['value'] ?? null] : []
+            );
+            $isDispatched = (($o['status'] ?? null) === 'dispatch')
+                || (($meta->get('_order_dispatched') === 'yes') && (($o['status'] ?? null) === 'processing'));
+            $existing = WooOrder::where('woo_id', $o['id'])->first();
+
             $order = WooOrder::updateOrCreate(['woo_id' => $o['id']], [
                 'number' => $o['number'],
-                'status' => $o['status'],
+                'status' => $isDispatched ? 'dispatch' : $o['status'],
+                'courier_name' => $meta->get('_courier_name') ?: $existing?->courier_name,
+                'tracking_number' => $meta->get('_tracking_number') ?: $existing?->tracking_number,
+                'dispatched_at' => $isDispatched ? ($existing?->dispatched_at ?? now()) : $existing?->dispatched_at,
                 'currency' => $o['currency'] ?? null,
                 'total' => $o['total'] ?? 0,
                 // How much of the order WooCommerce says was refunded: sales figures are net of it.

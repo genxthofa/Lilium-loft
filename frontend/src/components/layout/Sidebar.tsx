@@ -111,11 +111,6 @@ export function Sidebar() {
       icon: Boxes,
     },
     {
-      title: 'Coupons',
-      href: '/coupons',
-      icon: TicketPercent,
-    },
-    {
       title: 'Reports',
       href: '/reports',
       icon: BarChart3,

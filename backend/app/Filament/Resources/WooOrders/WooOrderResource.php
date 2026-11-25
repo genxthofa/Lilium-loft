@@ -34,6 +34,7 @@ class WooOrderResource extends Resource
         return match ($status) {
             'completed' => 'success',
             'processing' => 'info',
+            'dispatch' => 'primary',
             'on-hold', 'pending' => 'warning',
             'cancelled', 'failed', 'refunded' => 'danger',
             default => 'gray',

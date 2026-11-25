@@ -23,7 +23,10 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { FilterModal } from '@/components/ui/filter-modal';
 import { InvoiceModal } from '@/components/orders/InvoiceModal';
-import { printInvoice, downloadInvoicePDF } from '@/utils/invoice';
+import { OrderDetailModal } from '@/components/orders/OrderDetailModal';
+import { BulkInvoiceModal } from '@/components/orders/BulkInvoiceModal';
+import { printInvoice, downloadInvoicePDF, getInvoiceNumber } from '@/utils/invoice';
+import { useOrderStore, useUIStore } from '@/store';
 import { toast } from 'sonner';
 import {
   Table,
@@ -42,7 +45,6 @@ import {
 } from '@/components/ui/select';
 import { Pagination } from '@/components/ui/pagination';
 import { EmptyState } from '@/components/ui/empty-state';
-import { useOrderStore } from '@/store';
 import { Order, OrderStatus } from '@/types';
 import { formatCurrency, formatDate } from '@/utils/formatters';
 import { exportToCSV } from '@/utils/csv';
@@ -50,6 +52,7 @@ import { exportToCSV } from '@/utils/csv';
 export function OrdersListPage() {
   const navigate = useNavigate();
   const { orders } = useOrderStore();
+  const { generatedInvoiceIds, generateInvoice } = useUIStore();
 
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
@@ -61,8 +64,20 @@ export function OrdersListPage() {
   const [filterModalOpen, setFilterModalOpen] = useState(false);
   const [selectedInvoiceOrder, setSelectedInvoiceOrder] = useState<Order | null>(null);
   const [invoiceModalOpen, setInvoiceModalOpen] = useState(false);
+  const [selectedOrderForModal, setSelectedOrderForModal] = useState<Order | null>(null);
+  const [orderModalOpen, setOrderModalOpen] = useState(false);
+  const [bulkInvoiceOpen, setBulkInvoiceOpen] = useState(false);
   const [downloadingOrderId, setDownloadingOrderId] = useState<string | number | null>(null);
   const pageSize = 10;
+
+  const handleGenerateInvoice = (order: Order, e: React.MouseEvent) => {
+    e.stopPropagation();
+    generateInvoice(order.id);
+    const invNo = getInvoiceNumber(order);
+    toast.success(`Invoice ${invNo} generated for order #${order.orderNumber}`);
+    setSelectedInvoiceOrder(order);
+    setInvoiceModalOpen(true);
+  };
 
   const handleOpenInvoice = (order: Order, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
@@ -119,9 +134,11 @@ export function OrdersListPage() {
     return {
       all: orders.length,
       processing: orders.filter((o) => o.status === 'processing').length,
+      dispatch: orders.filter((o) => o.status === 'dispatch').length,
       completed: orders.filter((o) => o.status === 'completed').length,
       onHold: orders.filter((o) => o.status === 'on-hold').length,
       pending: orders.filter((o) => o.status === 'pending').length,
+      failed: orders.filter((o) => o.status === 'failed').length,
       refunded: orders.filter((o) => o.status === 'refunded').length,
       cancelled: orders.filter((o) => o.status === 'cancelled').length,
     };
@@ -174,7 +191,9 @@ export function OrdersListPage() {
       case 'completed':
         return <Badge variant="success">Completed</Badge>;
       case 'processing':
-        return <Badge variant="info">Processing</Badge>;
+        return <Badge variant="info">Order Placed</Badge>;
+      case 'dispatch':
+        return <Badge variant="purple">Dispatched</Badge>;
       case 'on-hold':
         return <Badge variant="warning">On-Hold</Badge>;
       case 'pending':
@@ -225,6 +244,15 @@ export function OrdersListPage() {
           <Button
             variant="outline"
             size="sm"
+            onClick={() => setBulkInvoiceOpen(true)}
+            className="flex-1 sm:flex-none gap-1.5 bg-white text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700"
+          >
+            <FileText className="h-4 w-4" />
+            <span>Bulk Invoices</span>
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
             onClick={handleExport}
             className="flex-1 sm:flex-none gap-1.5 bg-white text-slate-700"
           >
@@ -238,10 +266,12 @@ export function OrdersListPage() {
       <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
         {[
           { key: 'all', label: 'All Orders', count: counts.all },
-          { key: 'processing', label: 'Processing', count: counts.processing },
+          { key: 'processing', label: 'Order Placed', count: counts.processing },
+          { key: 'dispatch', label: 'Dispatched', count: counts.dispatch },
           { key: 'completed', label: 'Completed', count: counts.completed },
           { key: 'on-hold', label: 'On-Hold', count: counts.onHold },
           { key: 'pending', label: 'Pending', count: counts.pending },
+          { key: 'failed', label: 'Failed', count: counts.failed },
           { key: 'refunded', label: 'Refunded', count: counts.refunded },
           { key: 'cancelled', label: 'Cancelled', count: counts.cancelled },
         ].map((tab) => {
@@ -260,13 +290,6 @@ export function OrdersListPage() {
               }`}
             >
               <span>{tab.label}</span>
-              <span
-                className={`px-1.5 py-0.2 rounded-full text-[10px] ${
-                  isActive ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-700'
-                }`}
-              >
-                {tab.count}
-              </span>
             </button>
           );
         })}
@@ -377,7 +400,8 @@ export function OrdersListPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Statuses</SelectItem>
-                  <SelectItem value="processing">Processing</SelectItem>
+                  <SelectItem value="processing">Order Placed</SelectItem>
+                  <SelectItem value="dispatch">Dispatched</SelectItem>
                   <SelectItem value="completed">Completed</SelectItem>
                   <SelectItem value="on-hold">On-Hold</SelectItem>
                   <SelectItem value="pending">Pending</SelectItem>
@@ -492,7 +516,8 @@ export function OrdersListPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Statuses</SelectItem>
-                <SelectItem value="processing">Processing</SelectItem>
+                <SelectItem value="processing">Order Placed</SelectItem>
+                <SelectItem value="dispatch">Dispatched</SelectItem>
                 <SelectItem value="completed">Completed</SelectItem>
                 <SelectItem value="on-hold">On-Hold</SelectItem>
                 <SelectItem value="pending">Pending</SelectItem>
@@ -574,7 +599,10 @@ export function OrdersListPage() {
                 {paginatedOrders.map((order) => (
                   <div
                     key={order.id}
-                    onClick={() => navigate(`/orders/${order.id}`)}
+                    onClick={() => {
+                      setSelectedOrderForModal(order);
+                      setOrderModalOpen(true);
+                    }}
                     className="p-3.5 sm:p-4 rounded-xl border border-slate-200/80 bg-white shadow-sm hover:border-slate-300 hover:shadow cursor-pointer transition-all space-y-2.5"
                   >
                     <div className="flex items-center justify-between">
@@ -612,41 +640,55 @@ export function OrdersListPage() {
                         Payment: <span className="text-slate-700 font-medium">{order.paymentMethodTitle || 'Standard'}</span>
                       </span>
                       <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-                        <Button
-                          variant="outline"
-                          size="icon"
-                          onClick={(e) => handleOpenInvoice(order, e)}
-                          className="h-7 w-7 text-slate-600 hover:text-slate-900 hover:bg-slate-100 hover:border-slate-300"
-                          title="View Invoice"
-                          aria-label="View Invoice"
-                        >
-                          <Eye className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="icon"
-                          onClick={(e) => handleDirectPrint(order, e)}
-                          className="h-7 w-7 text-slate-600 hover:text-slate-900 hover:bg-slate-100 hover:border-slate-300"
-                          title="Print Invoice"
-                          aria-label="Print Invoice"
-                        >
-                          <Printer className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="icon"
-                          onClick={(e) => handleDirectDownload(order, e)}
-                          disabled={downloadingOrderId === order.id}
-                          className="h-7 w-7 text-red-600 hover:text-red-700 hover:bg-red-50 hover:border-red-200"
-                          title="Download PDF"
-                          aria-label="Download PDF"
-                        >
-                          {downloadingOrderId === order.id ? (
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          ) : (
-                            <Download className="h-3.5 w-3.5" />
-                          )}
-                        </Button>
+                        {generatedInvoiceIds.includes(String(order.id)) ? (
+                          <>
+                            <Button
+                              variant="outline"
+                              size="icon"
+                              onClick={(e) => handleOpenInvoice(order, e)}
+                              className="h-7 w-7 text-slate-600 hover:text-slate-900 hover:bg-slate-100 hover:border-slate-300"
+                              title="View Invoice"
+                              aria-label="View Invoice"
+                            >
+                              <Eye className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="icon"
+                              onClick={(e) => handleDirectPrint(order, e)}
+                              className="h-7 w-7 text-slate-600 hover:text-slate-900 hover:bg-slate-100 hover:border-slate-300"
+                              title="Print Invoice"
+                              aria-label="Print Invoice"
+                            >
+                              <Printer className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="icon"
+                              onClick={(e) => handleDirectDownload(order, e)}
+                              disabled={downloadingOrderId === order.id}
+                              className="h-7 w-7 text-red-600 hover:text-red-700 hover:bg-red-50 hover:border-red-200"
+                              title="Download PDF"
+                              aria-label="Download PDF"
+                            >
+                              {downloadingOrderId === order.id ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <Download className="h-3.5 w-3.5" />
+                              )}
+                            </Button>
+                          </>
+                        ) : (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={(e) => handleGenerateInvoice(order, e)}
+                            className="h-7 px-2.5 gap-1 text-[11px] bg-white text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700"
+                          >
+                            <FileText className="h-3 w-3" />
+                            <span>Generate</span>
+                          </Button>
+                        )}
                         <span
                           onClick={() => navigate(`/orders/${order.id}`)}
                           className="flex items-center gap-0.5 text-red-600 font-medium ml-1 cursor-pointer"
@@ -678,7 +720,10 @@ export function OrdersListPage() {
                     {paginatedOrders.map((order) => (
                       <TableRow
                         key={order.id}
-                        onClick={() => navigate(`/orders/${order.id}`)}
+                        onClick={() => {
+                          setSelectedOrderForModal(order);
+                          setOrderModalOpen(true);
+                        }}
                         className="cursor-pointer hover:bg-slate-50/80 transition-colors"
                       >
                         <TableCell className="font-bold text-slate-900 font-mono">
@@ -708,41 +753,55 @@ export function OrdersListPage() {
                         </TableCell>
                         <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center justify-center gap-1.5">
-                            <Button
-                              variant="outline"
-                              size="icon"
-                              onClick={(e) => handleOpenInvoice(order, e)}
-                              className="h-7 w-7 text-slate-600 hover:text-slate-900 hover:bg-slate-100 hover:border-slate-300"
-                              title="View Invoice"
-                              aria-label="View Invoice"
-                            >
-                              <Eye className="h-3.5 w-3.5" />
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="icon"
-                              onClick={(e) => handleDirectPrint(order, e)}
-                              className="h-7 w-7 text-slate-600 hover:text-slate-900 hover:bg-slate-100 hover:border-slate-300"
-                              title="Print Invoice"
-                              aria-label="Print Invoice"
-                            >
-                              <Printer className="h-3.5 w-3.5" />
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="icon"
-                              onClick={(e) => handleDirectDownload(order, e)}
-                              disabled={downloadingOrderId === order.id}
-                              className="h-7 w-7 text-red-600 hover:text-red-700 hover:bg-red-50 hover:border-red-200"
-                              title="Direct Download PDF"
-                              aria-label="Download PDF"
-                            >
-                              {downloadingOrderId === order.id ? (
-                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                              ) : (
-                                <Download className="h-3.5 w-3.5" />
-                              )}
-                            </Button>
+                            {generatedInvoiceIds.includes(String(order.id)) ? (
+                              <>
+                                <Button
+                                  variant="outline"
+                                  size="icon"
+                                  onClick={(e) => handleOpenInvoice(order, e)}
+                                  className="h-7 w-7 text-slate-600 hover:text-slate-900 hover:bg-slate-100 hover:border-slate-300"
+                                  title="View Invoice"
+                                  aria-label="View Invoice"
+                                >
+                                  <Eye className="h-3.5 w-3.5" />
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="icon"
+                                  onClick={(e) => handleDirectPrint(order, e)}
+                                  className="h-7 w-7 text-slate-600 hover:text-slate-900 hover:bg-slate-100 hover:border-slate-300"
+                                  title="Print Invoice"
+                                  aria-label="Print Invoice"
+                                >
+                                  <Printer className="h-3.5 w-3.5" />
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="icon"
+                                  onClick={(e) => handleDirectDownload(order, e)}
+                                  disabled={downloadingOrderId === order.id}
+                                  className="h-7 w-7 text-red-600 hover:text-red-700 hover:bg-red-50 hover:border-red-200"
+                                  title="Direct Download PDF"
+                                  aria-label="Download PDF"
+                                >
+                                  {downloadingOrderId === order.id ? (
+                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                  ) : (
+                                    <Download className="h-3.5 w-3.5" />
+                                  )}
+                                </Button>
+                              </>
+                            ) : (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={(e) => handleGenerateInvoice(order, e)}
+                                className="h-7 px-3 gap-1.5 text-xs bg-white text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700"
+                              >
+                                <FileText className="h-3.5 w-3.5" />
+                                <span>Generate</span>
+                              </Button>
+                            )}
                           </div>
                         </TableCell>
                       </TableRow>
@@ -768,6 +827,21 @@ export function OrdersListPage() {
         order={selectedInvoiceOrder}
         open={invoiceModalOpen}
         onOpenChange={setInvoiceModalOpen}
+      />
+
+      {/* Order Quick View / Detail Modal */}
+      <OrderDetailModal
+        order={selectedOrderForModal}
+        open={orderModalOpen}
+        onOpenChange={setOrderModalOpen}
+        onViewInvoice={(order) => handleOpenInvoice(order)}
+      />
+
+      {/* Bulk Date-wise Invoice Modal */}
+      <BulkInvoiceModal
+        orders={orders}
+        open={bulkInvoiceOpen}
+        onOpenChange={setBulkInvoiceOpen}
       />
     </div>
   );
