@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\Write;
 use App\Http\Controllers\Controller;
 use App\Models\WooOrder;
 use App\Services\WhatsApp\InteraktService;
+use App\Services\WooCommerce\MirrorVersion;
 use App\Services\WooCommerce\UpstreamUnavailable;
 use App\Services\WooCommerce\WooClient;
 use App\Services\WooCommerce\WooErrors;
@@ -125,34 +126,11 @@ class OrderWriteController extends Controller
             'tracking_number' => 'nullable|string|max:255',
         ]);
 
-        $isProcessingMapped = in_array($data['status'], ['in-processing', 'dispatch', 'out-for-delivery'], true);
-        $wooStatus = $isProcessingMapped ? 'processing' : $data['status'];
+        $isDashboardOnlyStatus = in_array($data['status'], ['in-processing', 'dispatch', 'out-for-delivery'], true)
+            || ($data['status'] === 'processing' && in_array($order->status, ['processing', 'in-processing', 'dispatch', 'out-for-delivery'], true));
 
-        $wooPayload = ['status' => $wooStatus];
-        $meta = [];
-        if ($isProcessingMapped) {
-            $meta[] = ['key' => '_dashboard_status', 'value' => $data['status']];
-            if (in_array($data['status'], ['dispatch', 'out-for-delivery'], true)) {
-                $meta[] = ['key' => '_order_dispatched', 'value' => 'yes'];
-            }
-            if (! empty($data['courier_name'])) {
-                $meta[] = ['key' => '_courier_name', 'value' => $data['courier_name']];
-            }
-            if (! empty($data['tracking_number'])) {
-                $meta[] = ['key' => '_tracking_number', 'value' => $data['tracking_number']];
-            }
-        } elseif (in_array($order->status, ['in-processing', 'dispatch', 'out-for-delivery'], true)) {
-            $meta[] = ['key' => '_dashboard_status', 'value' => $data['status']];
-            $meta[] = ['key' => '_order_dispatched', 'value' => $data['status'] === 'completed' ? 'yes' : 'no'];
-        }
-        if ($meta !== []) {
-            $wooPayload['meta_data'] = $meta;
-        }
-
-        $this->writer->run('orders', 'status', $order->woo_id, $wooPayload, ['status' => $order->status], $request->user(), $request->ip(),
-            fn (WooWriteClient $c) => $c->put("orders/{$order->woo_id}", $wooPayload));
-
-        if ($isProcessingMapped) {
+        if ($isDashboardOnlyStatus) {
+            // Keep WordPress on `processing`; track Order Placed / Processing / Dispatched / Out for Delivery in local DB.
             $order->update([
                 'status' => $data['status'],
                 'courier_name' => $data['courier_name'] ?? $order->courier_name,
@@ -161,9 +139,15 @@ class OrderWriteController extends Controller
                     ? ($order->dispatched_at ?? now())
                     : $order->dispatched_at,
             ]);
+            MirrorVersion::bump('orders');
+            $refreshed = $order->fresh()->load('items');
+        } else {
+            // WordPress status change (e.g. Delivered -> completed, cancelled, refunded, on-hold, pending, or processing from pending).
+            $wooPayload = ['status' => $data['status']];
+            $this->writer->run('orders', 'status', $order->woo_id, $wooPayload, ['status' => $order->status], $request->user(), $request->ip(),
+                fn (WooWriteClient $c) => $c->put("orders/{$order->woo_id}", $wooPayload));
+            $refreshed = $this->refreshed($order);
         }
-
-        $refreshed = $this->refreshed($order);
 
         if ($data['status'] === 'processing') {
             app(InteraktService::class)->sendOrderCreated($refreshed);
@@ -221,9 +205,17 @@ class OrderWriteController extends Controller
         if ($newStatus !== null) {
             $wooPayload['status'] = $isProcessingMapped ? 'processing' : $newStatus;
         }
-        foreach (['customer_note', 'payment_method', 'payment_method_title', 'transaction_id', 'billing', 'shipping'] as $field) {
+        foreach (['customer_note', 'payment_method', 'payment_method_title', 'transaction_id'] as $field) {
             if (array_key_exists($field, $data)) {
-                $wooPayload[$field] = $data[$field];
+                $wooPayload[$field] = (string) ($data[$field] ?? '');
+            }
+        }
+        foreach (['billing', 'shipping'] as $addrKey) {
+            if (isset($data[$addrKey]) && is_array($data[$addrKey])) {
+                $wooPayload[$addrKey] = array_map(
+                    fn ($v) => (string) ($v ?? ''),
+                    $data[$addrKey]
+                );
             }
         }
 

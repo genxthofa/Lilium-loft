@@ -167,16 +167,17 @@ class WooSyncService
             $meta = collect($o['meta_data'] ?? [])->mapWithKeys(
                 fn ($m) => isset($m['key']) ? [$m['key'] => $m['value'] ?? null] : []
             );
+            $existing = WooOrder::where('woo_id', $o['id'])->first();
             $dashboardStatus = $meta->get('_dashboard_status');
             $wooStatus = $o['status'] ?? 'pending';
+            $localFlowStatuses = ['in-processing', 'dispatch', 'out-for-delivery'];
             $resolvedStatus = match (true) {
-                $wooStatus === 'processing' && $dashboardStatus === 'in-processing' => 'in-processing',
-                $wooStatus === 'processing' && $dashboardStatus === 'out-for-delivery' => 'out-for-delivery',
-                $wooStatus === 'processing' && ($dashboardStatus === 'dispatch' || $meta->get('_order_dispatched') === 'yes') => 'dispatch',
+                $wooStatus === 'processing' && in_array($existing?->status, $localFlowStatuses, true) => $existing->status,
+                $wooStatus === 'processing' && in_array($dashboardStatus, $localFlowStatuses, true) => $dashboardStatus,
+                $wooStatus === 'processing' && $meta->get('_order_dispatched') === 'yes' => 'dispatch',
                 default => $wooStatus,
             };
             $isDispatched = in_array($resolvedStatus, ['dispatch', 'out-for-delivery', 'completed'], true);
-            $existing = WooOrder::where('woo_id', $o['id'])->first();
 
             $order = WooOrder::updateOrCreate(['woo_id' => $o['id']], [
                 'number' => $o['number'],
