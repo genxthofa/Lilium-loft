@@ -17,7 +17,7 @@ interface DispatchModalProps {
   orderNumber: string;
   initialCourierName?: string;
   initialTrackingNumber?: string;
-  onConfirm: (courierName: string, trackingNumber: string, shareWhatsApp: boolean) => Promise<void>;
+  onConfirm: (courierName: string, trackingNumber: string) => Promise<void>;
 }
 
 export function DispatchModal({
@@ -30,7 +30,6 @@ export function DispatchModal({
 }: DispatchModalProps) {
   const [courierName, setCourierName] = useState(initialCourierName);
   const [trackingNumber, setTrackingNumber] = useState(initialTrackingNumber);
-  const [shareWhatsApp, setShareWhatsApp] = useState(true);
   const [errors, setErrors] = useState<{ courier?: string; tracking?: string }>({});
   const [submitting, setSubmitting] = useState(false);
 
@@ -38,7 +37,6 @@ export function DispatchModal({
     if (open) {
       setCourierName(initialCourierName);
       setTrackingNumber(initialTrackingNumber);
-      setShareWhatsApp(true);
       setErrors({});
     }
   }, [open, initialCourierName, initialTrackingNumber]);
@@ -55,7 +53,7 @@ export function DispatchModal({
 
     setSubmitting(true);
     try {
-      await onConfirm(courierName.trim(), trackingNumber.trim(), shareWhatsApp);
+      await onConfirm(courierName.trim(), trackingNumber.trim());
       onOpenChange(false);
     } finally {
       setSubmitting(false);
@@ -119,16 +117,6 @@ export function DispatchModal({
               </p>
             )}
           </div>
-
-          <label className="flex items-center gap-2 pt-1 cursor-pointer select-none text-xs text-slate-700">
-            <input
-              type="checkbox"
-              checked={shareWhatsApp}
-              onChange={(e) => setShareWhatsApp(e.target.checked)}
-              className="h-4 w-4 rounded border-slate-300 accent-emerald-600 cursor-pointer"
-            />
-            <span>Share courier details &amp; customer invoice on WhatsApp</span>
-          </label>
 
           <DialogFooter className="pt-2 border-t border-slate-100 gap-2">
             <Button

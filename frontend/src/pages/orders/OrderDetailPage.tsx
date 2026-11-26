@@ -111,29 +111,15 @@ export function OrderDetailPage() {
     try {
       await updateOrderStatus(order.id, newStatus);
       toast.success(`Order status changed to ${newStatus}.`);
-      if (newStatus === 'completed') {
-        await shareOrderOnWhatsApp(order, { status: 'completed' });
-      }
     } catch (err) {
       toast.error(getErrorMessage(err));
     }
   };
 
-  const handleConfirmDispatch = async (
-    courierName: string,
-    trackingNumber: string,
-    shareWhatsApp: boolean
-  ) => {
+  const handleConfirmDispatch = async (courierName: string, trackingNumber: string) => {
     try {
       await updateOrderStatus(order.id, 'dispatch', { courierName, trackingNumber });
       toast.success('Order marked as Dispatched.');
-      if (shareWhatsApp) {
-        await shareOrderOnWhatsApp(order, {
-          status: 'dispatch',
-          courierName,
-          trackingNumber,
-        });
-      }
     } catch (err) {
       toast.error(getErrorMessage(err));
       throw err;
