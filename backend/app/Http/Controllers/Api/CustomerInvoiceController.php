@@ -19,7 +19,9 @@ class CustomerInvoiceController extends Controller
         $html = $this->renderHtml($order);
 
         if (class_exists(\Barryvdh\Dompdf\Facade\Pdf::class)) {
-            $pdf = \Barryvdh\Dompdf\Facade\Pdf::loadHTML($html)->setPaper('a4', 'portrait');
+            $pdf = \Barryvdh\Dompdf\Facade\Pdf::setOptions(['isRemoteEnabled' => true])
+                ->loadHTML($html)
+                ->setPaper('a4', 'portrait');
 
             return $pdf->stream("Invoice-{$order->number}.pdf");
         }
@@ -54,7 +56,9 @@ class CustomerInvoiceController extends Controller
         $html = $this->renderPackingSlipHtml($order);
 
         if (class_exists(\Barryvdh\Dompdf\Facade\Pdf::class)) {
-            $pdf = \Barryvdh\Dompdf\Facade\Pdf::loadHTML($html)->setPaper('a4', 'portrait');
+            $pdf = \Barryvdh\Dompdf\Facade\Pdf::setOptions(['isRemoteEnabled' => true])
+                ->loadHTML($html)
+                ->setPaper('a4', 'portrait');
 
             return $pdf->stream("Packing-Slip-{$order->number}.pdf");
         }
@@ -88,6 +92,7 @@ class CustomerInvoiceController extends Controller
 
         $billName = e(trim(($billing['first_name'] ?? '').' '.($billing['last_name'] ?? '')) ?: ($order->billing_name ?: 'Customer'));
         $billAddr1 = e($billing['address_1'] ?? '');
+        $billAddr2 = e($billing['address_2'] ?? '');
         $billCity = e(trim(($billing['city'] ?? '').' '.($billing['postcode'] ?? '')));
         $billState = e($billing['state'] ?? '');
         $billEmail = e($billing['email'] ?? ($order->billing_email ?? ''));
@@ -95,6 +100,7 @@ class CustomerInvoiceController extends Controller
 
         $shipName = e(trim(($shipping['first_name'] ?? '').' '.($shipping['last_name'] ?? '')) ?: $billName);
         $shipAddr1 = e(($shipping['address_1'] ?? '') ?: $billAddr1);
+        $shipAddr2 = e(($shipping['address_2'] ?? '') ?: $billAddr2);
         $shipCity = e(trim(($shipping['city'] ?? '').' '.($shipping['postcode'] ?? '')) ?: $billCity);
         $shipState = e(($shipping['state'] ?? '') ?: $billState);
         $shipPhone = e(($shipping['phone'] ?? '') ?: $billPhone);
@@ -110,21 +116,21 @@ class CustomerInvoiceController extends Controller
             $rawItem = $rawItems->get($item->woo_item_id);
             $imgUrl = $rawItem['image']['src'] ?? $productImages->get($item->product_woo_id) ?? '';
             $imgTag = $imgUrl
-                ? '<img src="'.e($imgUrl).'" alt="" style="width:46px;height:46px;object-fit:cover;border-radius:3px;">'
+                ? '<img src="'.e($imgUrl).'" alt="" style="width:52px;height:52px;object-fit:cover;border-radius:6px;">'
                 : '<span style="color:#94a3b8;">—</span>';
             $sku = e($item->sku ?? '');
             $qty = max(1, (int) $item->quantity);
 
             $rows .= '<tr>'
-                .'<td style="width:52px;">'.($idx + 1).'</td>'
-                .'<td style="width:76px;">'.$imgTag.'</td>'
-                .'<td style="width:110px;">'.$sku.'</td>'
+                .'<td style="width:68px;">'.($idx + 1).'</td>'
+                .'<td style="width:120px;">'.$imgTag.'</td>'
+                .'<td style="width:95px;">'.$sku.'</td>'
                 .'<td>'.e($item->name).'</td>'
-                .'<td style="width:80px;text-align:center;">'.$qty.'</td>'
+                .'<td style="width:90px;text-align:center;">'.$qty.'</td>'
                 .'</tr>';
         }
 
-        $logoUrl = e(rtrim((string) config('app.url'), '/').'/logo.png');
+        $logoUrl = $this->logoDataUri();
 
         return <<<HTML
 <!DOCTYPE html>
@@ -133,22 +139,23 @@ class CustomerInvoiceController extends Controller
 <meta charset="UTF-8">
 <title>Packing Slip #{$order->number}</title>
 <style>
-  body { font-family: DejaVu Sans, Arial, sans-serif; color: #1e293b; font-size: 12px; margin: 0; padding: 36px 40px; }
+  @page { size: A4 portrait; margin: 12mm; }
+  body { font-family: DejaVu Sans, Arial, sans-serif; color: #1e293b; font-size: 11.5px; margin: 0; padding: 8px 14px; }
   table.layout { width: 100%; border-collapse: collapse; }
   table.layout td { vertical-align: top; }
-  table.items { width: 100%; border-collapse: collapse; margin-top: 28px; }
-  table.items th { border-bottom: 1.5px solid #334155; padding: 8px 6px; text-align: left; font-weight: 700; }
+  table.items { width: 100%; border-collapse: collapse; margin-top: 26px; }
+  table.items th { border-bottom: 1px solid #cbd5e1; padding: 8px 6px; text-align: left; font-weight: 700; color: #0f172a; }
   table.items td { border-bottom: 1px solid #e2e8f0; padding: 10px 6px; vertical-align: middle; }
 </style>
 </head>
 <body>
   <table class="layout">
     <tr>
-      <td style="width:58%;">
-        <h1 style="margin:0 0 12px 0;font-size:22px;font-weight:700;">Packing slip</h1>
-        <img src="{$logoUrl}" alt="Lilium & Loft" style="height:44px;width:auto;">
+      <td style="width:67%;">
+        <div style="margin:0 0 14px 0;font-size:24px;font-weight:700;color:#1e293b;">Packing slip</div>
+        <img src="{$logoUrl}" alt="Lilium & Loft" style="height:46px;width:auto;">
       </td>
-      <td style="width:42%;line-height:1.7;">
+      <td style="width:33%;padding-top:38px;line-height:1.7;">
         <strong>Order No.:</strong> {$order->number}<br>
         <strong>Order Date:</strong> {$date}<br>
         <strong>Shipping Method:</strong> {$shippingMethod}
@@ -158,25 +165,27 @@ class CustomerInvoiceController extends Controller
   <table class="layout" style="margin-top:26px;line-height:1.6;">
     <tr>
       <td style="width:33%;padding-right:12px;">
-        <strong>From</strong><br>
+        <strong style="display:block;margin-bottom:3px;">From</strong>
         Lilium and Loft Crochet Studio<br>
         45 (13), 2nd Cross, Venkata Nagar<br>
         605011<br>
         Pondicherry (Puducherry)
       </td>
       <td style="width:34%;padding-right:12px;">
-        <strong>Bill to</strong><br>
+        <strong style="display:block;margin-bottom:3px;">Bill to</strong>
         {$billName}<br>
         {$billAddr1}<br>
+        {$billAddr2}
         {$billCity}<br>
         {$billState}<br>
         <strong>Email:</strong> {$billEmail}<br>
         <strong>Phone:</strong> {$billPhone}
       </td>
       <td style="width:33%;">
-        <strong>Ship to</strong><br>
+        <strong style="display:block;margin-bottom:3px;">Ship to</strong>
         {$shipName}<br>
         {$shipAddr1}<br>
+        {$shipAddr2}
         {$shipCity}<br>
         {$shipState}<br>
         {$shipPhone}
@@ -186,11 +195,11 @@ class CustomerInvoiceController extends Controller
   <table class="items">
     <thead>
       <tr>
-        <th style="width:52px;">S.No</th>
-        <th style="width:76px;">Image</th>
-        <th style="width:110px;">SKU</th>
+        <th style="width:68px;">S.No</th>
+        <th style="width:120px;">Image</th>
+        <th style="width:95px;">SKU</th>
         <th>Product</th>
-        <th style="width:80px;text-align:center;">Quantity</th>
+        <th style="width:90px;text-align:center;">Quantity</th>
       </tr>
     </thead>
     <tbody>{$rows}</tbody>
@@ -210,18 +219,33 @@ HTML;
 
         $billName = e(trim(($billing['first_name'] ?? '').' '.($billing['last_name'] ?? '')) ?: ($order->billing_name ?: 'Customer'));
         $billAddr1 = e($billing['address_1'] ?? '');
+        $billAddr2 = e($billing['address_2'] ?? '');
         $billCity = e(trim(($billing['city'] ?? '').' '.($billing['postcode'] ?? '')));
         $billState = e($billing['state'] ?? '');
         $billPhone = e($billing['phone'] ?? ($order->billing_phone ?? ''));
 
         $shipName = e(trim(($shipping['first_name'] ?? '').' '.($shipping['last_name'] ?? '')) ?: $billName);
         $shipAddr1 = e(($shipping['address_1'] ?? '') ?: $billAddr1);
+        $shipAddr2 = e(($shipping['address_2'] ?? '') ?: $billAddr2);
         $shipCity = e(trim(($shipping['city'] ?? '').' '.($shipping['postcode'] ?? '')) ?: $billCity);
         $shipState = e(($shipping['state'] ?? '') ?: $billState);
         $shipPhone = e(($shipping['phone'] ?? '') ?: $billPhone);
 
         $currency = $order->currency === 'INR' ? '₹' : e(($order->currency ?: 'INR').' ');
-        $payment = e($order->payment_method_title ?: ($order->payment_method ?: 'Online'));
+        $payment = e(ucwords($order->payment_method_title ?: ($order->payment_method ?: 'Online')));
+
+        $stampText = match (strtolower((string) $order->status)) {
+            'refunded' => 'REFUNDED',
+            'cancelled' => 'CANCELLED',
+            'on-hold', 'pending' => 'PENDING',
+            default => 'RECEIVED',
+        };
+
+        $rawItems = collect($order->raw['line_items'] ?? [])->keyBy('id');
+        $productImages = WooProduct::whereIn(
+            'woo_id',
+            $order->items->pluck('product_woo_id')->filter()->all()
+        )->pluck('image_url', 'woo_id');
 
         $rows = '';
         $subtotal = 0.0;
@@ -230,12 +254,20 @@ HTML;
             $amount = (float) $item->total;
             $rate = $amount / $qty;
             $subtotal += $amount;
+
+            $rawItem = $rawItems->get($item->woo_item_id);
+            $imgUrl = $rawItem['image']['src'] ?? $productImages->get($item->product_woo_id) ?? '';
+            $imgTag = $imgUrl
+                ? '<img src="'.e($imgUrl).'" alt="" style="width:40px;height:40px;object-fit:cover;border-radius:3px;border:1px solid #cbd5e1;">'
+                : '<span style="color:#94a3b8;">—</span>';
+
             $rows .= '<tr>'
                 .'<td style="text-align:center;">'.($idx + 1).'</td>'
-                .'<td>'.e($item->name).'</td>'
+                .'<td style="text-align:center;">'.$imgTag.'</td>'
+                .'<td style="font-weight:500;">'.e($item->name).'</td>'
                 .'<td style="text-align:right;">'.number_format($qty, 2).'</td>'
                 .'<td style="text-align:right;">'.number_format($rate, 2).'</td>'
-                .'<td style="text-align:right;font-weight:600;">'.number_format($amount, 2).'</td>'
+                .'<td style="text-align:right;font-weight:700;">'.number_format($amount, 2).'</td>'
                 .'</tr>';
         }
 
@@ -247,6 +279,9 @@ HTML;
             ? '<tr><td>Discount</td><td style="text-align:right;color:#059669;">-'.$currency.number_format($discountTotal, 2).'</td></tr>'
             : '';
 
+        $logoUrl = $this->logoDataUri();
+        $shippingDisplay = $shippingTotal > 0 ? $currency.number_format($shippingTotal, 2) : 'Free';
+
         return <<<HTML
 <!DOCTYPE html>
 <html lang="en">
@@ -254,59 +289,94 @@ HTML;
 <meta charset="UTF-8">
 <title>Invoice #{$order->number}</title>
 <style>
-  body { font-family: DejaVu Sans, Arial, sans-serif; color: #1e293b; font-size: 12px; margin: 0; padding: 32px; }
+  @page { size: A4 portrait; margin: 12mm; }
+  body { font-family: DejaVu Sans, Arial, sans-serif; color: #1e293b; font-size: 11.5px; line-height: 1.5; margin: 0; padding: 8px 14px; }
   table.layout { width: 100%; border-collapse: collapse; }
   table.layout td { vertical-align: top; }
   table.items { width: 100%; border-collapse: collapse; margin-top: 22px; }
-  table.items th, table.items td { border: 1px solid #475569; padding: 7px 9px; }
-  table.items thead th { background: #f1f5f9; font-weight: 700; }
-  table.totals { width: 260px; margin-left: auto; margin-top: 20px; border-collapse: collapse; }
-  table.totals td { padding: 4px 0; }
-  .grand td { border-top: 1px solid #cbd5e1; padding-top: 8px; font-weight: 700; font-size: 14px; }
+  table.items th, table.items td { border: 1px solid #475569; padding: 6px 8px; }
+  table.items thead th { background: #f1f5f9; font-weight: 700; color: #0f172a; }
+  table.totals { width: 100%; border-collapse: collapse; font-size: 12px; }
+  table.totals td { padding: 4px 0; color: #334155; }
+  .grand td { border-top: 1px solid #e2e8f0; padding-top: 8px; font-weight: 700; font-size: 13.5px; color: #0f172a; }
+  .stamp { display: inline-block; padding: 5px 14px; border: 3px solid #a87575; border-radius: 6px; color: #a87575; font-weight: 800; font-size: 16px; letter-spacing: 2px; text-transform: uppercase; transform: rotate(-45deg); }
+  .footer { position: fixed; bottom: 0; left: 0; right: 0; text-align: center; color: #475569; font-size: 11px; }
 </style>
 </head>
 <body>
   <table class="layout">
     <tr>
-      <td style="width:60%;"><h1 style="margin:0;font-size:20px;">INVOICE</h1></td>
-      <td style="width:40%;">
-        <strong>From</strong><br>
+      <td style="width:62%;">
+        <div style="font-size:20px;font-weight:800;letter-spacing:0.04em;margin-bottom:10px;">INVOICE</div>
+        <img src="{$logoUrl}" alt="Lilium & Loft" style="height:48px;width:auto;">
+      </td>
+      <td style="width:38%;line-height:1.6;">
+        <strong style="display:block;margin-bottom:3px;">From</strong>
         Lilium and Loft Crochet Studio<br>
-        45 (13), 2nd Cross, Venkata Nagar, 605011<br>
+        45 (13), 2nd Cross, Venkata Nagar<br>
+        605011<br>
         Pondicherry (Puducherry)
       </td>
     </tr>
   </table>
-  <table class="layout" style="margin-top:24px;">
+  <table class="layout" style="margin-top:24px;line-height:1.6;">
     <tr>
-      <td style="width:34%;"><strong>Bill to</strong><br>{$billName}<br>{$billAddr1}<br>{$billCity}<br>{$billState}<br>{$billPhone}</td>
-      <td style="width:34%;"><strong>Ship to</strong><br>{$shipName}<br>{$shipAddr1}<br>{$shipCity}<br>{$shipState}<br>{$shipPhone}</td>
+      <td style="width:34%;padding-right:10px;">
+        <strong style="display:block;margin-bottom:3px;">Bill to</strong>
+        <strong>{$billName}</strong><br>
+        {$billAddr1}<br>
+        {$billAddr2}
+        {$billCity}<br>
+        {$billState}<br>
+        {$billPhone}
+      </td>
+      <td style="width:34%;padding-right:10px;">
+        <strong style="display:block;margin-bottom:3px;">Ship to</strong>
+        <strong>{$shipName}</strong><br>
+        {$shipAddr1}<br>
+        {$shipAddr2}
+        {$shipCity}<br>
+        {$shipState}<br>
+        {$shipPhone}
+      </td>
       <td style="width:32%;">
-        <strong>Invoice no:</strong> {$invoiceNo}<br>
-        <strong>Order date:</strong> {$date}<br>
-        <strong>Payment:</strong> {$payment}
+        <table class="layout" style="line-height:1.6;">
+          <tr><td style="font-weight:700;padding-right:8px;white-space:nowrap;">Invoice no:</td><td>{$invoiceNo}</td></tr>
+          <tr><td style="font-weight:700;padding-right:8px;white-space:nowrap;">Order date:</td><td>{$date}</td></tr>
+          <tr><td style="font-weight:700;padding-right:8px;white-space:nowrap;">Payment method:</td><td>{$payment}</td></tr>
+        </table>
       </td>
     </tr>
   </table>
   <table class="items">
     <thead>
       <tr>
-        <th style="width:45px;text-align:center;">S.No</th>
+        <th style="width:38px;text-align:center;">S.No</th>
+        <th style="width:54px;text-align:center;">Image</th>
         <th style="text-align:left;">Item</th>
-        <th style="width:65px;text-align:right;">Qty</th>
-        <th style="width:90px;text-align:right;">Rate</th>
-        <th style="width:100px;text-align:right;">Amount</th>
+        <th style="width:56px;text-align:right;">Qty</th>
+        <th style="width:82px;text-align:right;">Rate</th>
+        <th style="width:88px;text-align:right;">Amount</th>
       </tr>
     </thead>
     <tbody>{$rows}</tbody>
   </table>
-  <table class="totals">
-    <tr><td>Subtotal</td><td style="text-align:right;">{$currency}{$this->num($subtotal)}</td></tr>
-    <tr><td>Shipping</td><td style="text-align:right;">{$currency}{$this->num($shippingTotal)}</td></tr>
-    {$discountRow}
-    <tr class="grand"><td>Grand Total</td><td style="text-align:right;">{$currency}{$this->num($grandTotal)}</td></tr>
+  <table class="layout" style="margin-top:28px;">
+    <tr>
+      <td style="width:56%;text-align:center;vertical-align:middle;padding-top:22px;">
+        <div class="stamp">{$stampText}</div>
+      </td>
+      <td style="width:44%;">
+        <table class="totals">
+          <tr><td>Subtotal</td><td style="text-align:right;">{$currency}{$this->num($subtotal)}</td></tr>
+          <tr><td>Shipping</td><td style="text-align:right;">{$shippingDisplay}</td></tr>
+          {$discountRow}
+          <tr class="grand"><td>Grand Total</td><td style="text-align:right;">{$currency}{$this->num($grandTotal)}</td></tr>
+        </table>
+      </td>
+    </tr>
   </table>
-  <p style="text-align:center;margin-top:48px;color:#64748b;font-size:11px;">Lilium and Loft Crochet Studio — Thank you for your order!</p>
+  <div class="footer">Lilium and Loft Crochet Studio — Thank you for your order!</div>
 </body>
 </html>
 HTML;
@@ -315,6 +385,19 @@ HTML;
     private function num(float $val): string
     {
         return number_format($val, 2);
+    }
+
+    private function logoDataUri(): string
+    {
+        $path = public_path('logo.png');
+        if (is_file($path)) {
+            $raw = file_get_contents($path);
+            if ($raw !== false) {
+                return 'data:image/png;base64,'.base64_encode($raw);
+            }
+        }
+
+        return e(rtrim((string) config('app.url'), '/').'/logo.png');
     }
 
     private function buildCustomerInvoicePdf(WooOrder $order): string

@@ -140,6 +140,12 @@ class InteraktService
         $baseUrl = rtrim((string) config('services.interakt.base_url', 'https://api.interakt.ai/v1/public'), '/');
         $apiKey = (string) config('services.interakt.api_key');
 
+        $sanitizedBody = array_map(function ($val): string {
+            $clean = trim((string) preg_replace('/\s+/u', ' ', (string) $val));
+
+            return $clean !== '' ? $clean : 'N/A';
+        }, array_values($bodyValues));
+
         $payload = [
             'countryCode' => $countryCode,
             'phoneNumber' => $phoneNumber,
@@ -150,7 +156,7 @@ class InteraktService
                 'languageCode' => 'en',
                 'headerValues' => [$invoiceUrl],
                 'fileName' => $docFileName,
-                'bodyValues' => array_values($bodyValues),
+                'bodyValues' => $sanitizedBody,
             ],
         ];
 
@@ -161,7 +167,7 @@ class InteraktService
             ])->timeout(15)->post("{$baseUrl}/message/", $payload);
 
             // If template doesn't have a Document header configured in Interakt, retry without headerValues/fileName.
-            if ($response->status() === 400 && isset($payload['template']['headerValues'])) {
+            if ($response->failed() && isset($payload['template']['headerValues'])) {
                 Log::warning('Interakt template rejected document header, retrying without header', [
                     'order_id' => $order->id,
                     'template' => $templateName,
