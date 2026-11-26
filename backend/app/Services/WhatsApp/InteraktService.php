@@ -115,24 +115,39 @@ class InteraktService
         ?string $documentUrl = null,
         ?string $fileName = null
     ): bool {
+        $ctx = [
+            'order_id' => $order->id,
+            'order_number' => $order->number,
+            'order_status' => $order->status,
+            'template' => $templateName,
+        ];
+
+        // STEP 1: was a send requested at all, and is the service configured on this server?
+        Log::info('WA[1] send requested', $ctx + [
+            'enabled' => (bool) config('services.interakt.enabled'),
+            'api_key_present' => ! empty(config('services.interakt.api_key')),
+            'api_key_length' => strlen((string) config('services.interakt.api_key')),
+            'base_url' => config('services.interakt.base_url'),
+            'app_url' => config('app.url'),
+            'raw_phone' => $order->billing_phone,
+            'document_override' => $documentUrl !== null,
+        ]);
+
         if (! $this->isConfigured()) {
-            Log::debug('Interakt WhatsApp skipped: not enabled or missing INTERAKT_API_KEY', [
-                'order_id' => $order->id,
-                'template' => $templateName,
-            ]);
+            Log::warning('WA[1x] skipped: INTERAKT_ENABLED is false or INTERAKT_API_KEY is empty (check .env and run config:clear)', $ctx);
 
             return false;
         }
 
         $phone = $this->extractPhone($order);
         if (! $phone) {
-            Log::warning('Interakt WhatsApp skipped: order has no customer phone number', [
-                'order_id' => $order->id,
-                'order_number' => $order->number,
+            Log::warning('WA[2x] skipped: order has no usable customer phone number', $ctx + [
+                'billing_phone' => $order->billing_phone,
             ]);
 
             return false;
         }
+        Log::info('WA[2] phone parsed', $ctx + ['country_code' => $phone[0], 'phone_number' => $phone[1]]);
 
         [$countryCode, $phoneNumber] = $phone;
         $invoiceUrl = $documentUrl ?: $this->customerInvoiceUrl($order);
@@ -160,48 +175,61 @@ class InteraktService
             ],
         ];
 
+        // STEP 3: exactly what we are about to send (API key is never logged).
+        Log::info('WA[3] request prepared', $ctx + [
+            'url' => "{$baseUrl}/message/",
+            'payload' => $payload,
+            'body_value_count' => count($sanitizedBody),
+            'document_url_is_public' => ! preg_match('#^https?://(localhost|127\.|192\.168\.|10\.)#i', (string) $invoiceUrl),
+        ]);
+
         try {
             $response = Http::withHeaders([
                 'Authorization' => "Basic {$apiKey}",
                 'Content-Type' => 'application/json',
             ])->timeout(15)->post("{$baseUrl}/message/", $payload);
 
+            // STEP 4: Interakt's answer to the first attempt (with document header).
+            Log::info('WA[4] Interakt response (attempt 1, with header)', $ctx + [
+                'http_status' => $response->status(),
+                'ok' => $response->successful(),
+                'body' => mb_substr($response->body(), 0, 2000),
+            ]);
+
             // If template doesn't have a Document header configured in Interakt, retry without headerValues/fileName.
             if ($response->failed() && isset($payload['template']['headerValues'])) {
-                Log::warning('Interakt template rejected document header, retrying without header', [
-                    'order_id' => $order->id,
-                    'template' => $templateName,
-                    'body' => mb_substr($response->body(), 0, 500),
-                ]);
+                Log::warning('WA[5] attempt 1 failed, retrying WITHOUT document header', $ctx);
                 unset($payload['template']['headerValues'], $payload['template']['fileName']);
                 $response = Http::withHeaders([
                     'Authorization' => "Basic {$apiKey}",
                     'Content-Type' => 'application/json',
                 ])->timeout(15)->post("{$baseUrl}/message/", $payload);
+
+                Log::info('WA[6] Interakt response (attempt 2, no header)', $ctx + [
+                    'http_status' => $response->status(),
+                    'ok' => $response->successful(),
+                    'body' => mb_substr($response->body(), 0, 2000),
+                ]);
             }
 
             if ($response->failed()) {
-                Log::error('Interakt WhatsApp API failed', [
-                    'order_id' => $order->id,
-                    'template' => $templateName,
-                    'status' => $response->status(),
-                    'body' => mb_substr($response->body(), 0, 1000),
+                Log::error('WA[7x] FAILED: Interakt rejected the message', $ctx + [
+                    'http_status' => $response->status(),
+                    'body' => mb_substr($response->body(), 0, 2000),
                 ]);
 
                 return false;
             }
 
-            Log::info('Interakt WhatsApp sent', [
-                'order_id' => $order->id,
-                'order_number' => $order->number,
-                'template' => $templateName,
+            Log::info('WA[7] SENT: Interakt accepted the message (delivery to the phone is reported by Interakt/Meta separately)', $ctx + [
+                'http_status' => $response->status(),
+                'body' => mb_substr($response->body(), 0, 1000),
             ]);
 
             return true;
         } catch (\Throwable $e) {
-            Log::error('Interakt WhatsApp exception', [
-                'order_id' => $order->id,
-                'template' => $templateName,
+            Log::error('WA[8x] EXCEPTION while calling Interakt', $ctx + [
+                'exception' => get_class($e),
                 'message' => $e->getMessage(),
             ]);
 

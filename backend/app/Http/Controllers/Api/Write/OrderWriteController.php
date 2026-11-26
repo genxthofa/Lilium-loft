@@ -149,6 +149,11 @@ class OrderWriteController extends Controller
             $refreshed = $this->refreshed($order);
         }
 
+        \Illuminate\Support\Facades\Log::info('WA[0] status changed from admin, deciding WhatsApp', [
+            'order_id' => $refreshed->id,
+            'status' => $data['status'],
+        ]);
+
         if ($data['status'] === 'processing') {
             app(InteraktService::class)->sendOrderCreated($refreshed);
         } elseif ($data['status'] === 'in-processing') {
@@ -255,6 +260,11 @@ class OrderWriteController extends Controller
 
         $refreshed = $this->refreshed($order);
 
+        \Illuminate\Support\Facades\Log::info('WA[0] order updated from admin, deciding WhatsApp', [
+            'order_id' => $refreshed->id,
+            'status' => $data['status'] ?? null,
+        ]);
+
         if (($data['status'] ?? null) === 'processing') {
             app(InteraktService::class)->sendOrderCreated($refreshed);
         } elseif (($data['status'] ?? null) === 'in-processing') {
@@ -285,6 +295,12 @@ class OrderWriteController extends Controller
     public function sendWhatsApp(int $id, InteraktService $interakt): JsonResponse
     {
         $order = WooOrder::with('items')->findOrFail($id);
+
+        \Illuminate\Support\Facades\Log::info('WA[0] manual send requested', [
+            'order_id' => $order->id,
+            'order_status' => $order->status,
+            'configured' => $interakt->isConfigured(),
+        ]);
 
         $sent = match ($order->status) {
             'in-processing' => $interakt->sendOrderProcessing($order),

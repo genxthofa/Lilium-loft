@@ -73,6 +73,13 @@ class ProcessWooWebhook implements ShouldQueue
 
         if ($this->resource === 'order' && $stored instanceof WooOrder) {
             $interakt = app(InteraktService::class);
+            \Illuminate\Support\Facades\Log::info('WA[0] webhook order processed', [
+                'woo_id' => $stored->woo_id,
+                'event' => $this->event,
+                'previous_status' => $previousStatus,
+                'new_status' => $stored->status,
+                'will_attempt_send' => $this->event === 'created' || $previousStatus === null || $previousStatus !== $stored->status,
+            ]);
             if ($this->event === 'created' || ($previousStatus === null)) {
                 if (Cache::add("interakt_placed_{$stored->woo_id}", true, now()->addDays(7))) {
                     $interakt->sendOrderCreated($stored);
