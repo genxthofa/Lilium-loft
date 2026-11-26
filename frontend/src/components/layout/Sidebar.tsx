@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard,
@@ -8,7 +8,7 @@ import {
   Boxes,
   TicketPercent,
   BarChart3,
-  Truck,
+  // Truck,
   CreditCard,
   Settings,
   ChevronDown,
@@ -23,8 +23,10 @@ import {
   ExternalLink,
   ShieldCheck,
   Trash2,
+  Receipt,
 } from 'lucide-react';
-import { useUIStore, useBackendSyncStore } from '@/store';
+import { useUIStore, useBackendSyncStore, useOrderStore } from '@/store';
+import { getRecentOrdersCount } from '@/utils/orders';
 import { cn } from '@/utils/cn';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import {
@@ -50,6 +52,8 @@ export function Sidebar() {
   const location = useLocation();
   const navigate = useNavigate();
   const { currentUser, logout } = useBackendSyncStore();
+  const orders = useOrderStore((s) => s.orders);
+  const recentOrdersCount = useMemo(() => getRecentOrdersCount(orders), [orders]);
 
   const [productsOpen, setProductsOpen] = useState(
     location.pathname.startsWith('/products')
@@ -99,6 +103,12 @@ export function Sidebar() {
       title: 'Orders',
       href: '/orders',
       icon: ShoppingCart,
+      badge: recentOrdersCount > 0 ? recentOrdersCount : undefined,
+    },
+    {
+      title: 'GST',
+      href: '/gst',
+      icon: Receipt,
     },
     {
       title: 'Customers',
@@ -115,11 +125,11 @@ export function Sidebar() {
       href: '/reports',
       icon: BarChart3,
     },
-    {
-      title: 'Shipping',
-      href: '/shipping',
-      icon: Truck,
-    },
+    // {
+    //   title: 'Shipping',
+    //   href: '/shipping',
+    //   icon: Truck,
+    // },
     {
       title: 'Payments',
       href: '/payments',
@@ -263,8 +273,8 @@ export function Sidebar() {
                 {!sidebarCollapsed && <span className="text-[15px]">{item.title}</span>}
               </div>
 
-              {!sidebarCollapsed && item.badge && (
-                <span className="flex h-5 items-center justify-center rounded-full bg-red-100 px-2 text-xs font-bold text-red-700">
+              {!sidebarCollapsed && Boolean(item.badge) && Number(item.badge) > 0 && (
+                <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1.5 text-xs font-bold text-white">
                   {item.badge}
                 </span>
               )}

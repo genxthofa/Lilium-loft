@@ -20,7 +20,7 @@ use OpenApi\Attributes as OA;
 class DashboardController extends Controller
 {
     /** Statuses that count as "sales". */
-    private const PAID = ['completed', 'processing', 'dispatch'];
+    private const PAID = ['completed', 'processing', 'in-processing', 'dispatch', 'out-for-delivery'];
 
     #[OA\Get(
         path: '/api/v1/dashboard/summary',
@@ -62,6 +62,10 @@ class DashboardController extends Controller
             $current = WooOrder::whereIn('status', self::PAID)->whereBetween('woo_created_at', [$from, $to]);
             $previous = WooOrder::whereIn('status', self::PAID)->whereBetween('woo_created_at', [$prevFrom, $prevTo]);
             $days = $diffDays;
+        } elseif ($request->input('days') === 'all') {
+            $current = WooOrder::whereIn('status', self::PAID);
+            $previous = WooOrder::whereRaw('1 = 0');
+            $days = 0;
         } elseif ($request->input('days') === 'today' || (int) $request->input('days') === 1) {
             $from = now()->startOfDay();
             $to = now()->endOfDay();
@@ -130,6 +134,11 @@ class DashboardController extends Controller
             $from = Carbon::parse($request->date_from)->startOfDay();
             $to = $request->filled('date_to') ? Carbon::parse($request->date_to)->endOfDay() : now()->endOfDay();
             $days = max(1, (int) $from->diffInDays($to) + 1);
+        } elseif ($request->input('days') === 'all') {
+            $minDate = WooOrder::whereIn('status', self::PAID)->min('woo_created_at');
+            $from = $minDate ? Carbon::parse($minDate)->startOfDay() : now()->subDays(29)->startOfDay();
+            $to = now()->endOfDay();
+            $days = max(1, min(365, (int) $from->diffInDays($to) + 1));
         } elseif ($request->input('days') === 'today' || (int) $request->input('days') === 1) {
             $from = now()->startOfDay();
             $to = now()->endOfDay();

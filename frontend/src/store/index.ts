@@ -260,6 +260,8 @@ interface OrderStore {
     status: OrderStatus,
     dispatchInfo?: { courierName?: string; trackingNumber?: string }
   ) => Promise<void>;
+  updateOrder: (id: string, payload: Record<string, unknown>) => Promise<Order>;
+  deleteOrder: (id: string) => Promise<void>;
   addOrderNote: (orderId: string, content: string, isCustomerNote: boolean) => Promise<void>;
   refundOrder: (orderId: string, amount: number, reason: string) => Promise<void>;
 }
@@ -319,6 +321,23 @@ export const useOrderStore = create<OrderStore>((set, get) => {
       replace(mapped);
       await get().loadOrderDetails(id);
       notifyLiveStoreSync('Order Updated', `Order #${mapped.orderNumber} status updated live.`);
+    },
+    updateOrder: async (id, payload) => {
+      const updated = await ordersApi.update(id, payload);
+      const mapped = mapBackendOrder(updated);
+      replace(mapped);
+      await get().loadOrderDetails(id);
+      notifyLiveStoreSync('Order Updated', `Order #${mapped.orderNumber} updated live.`);
+      return mapped;
+    },
+    deleteOrder: async (id) => {
+      const existing = get().orders.find((o) => o.id === id);
+      await ordersApi.remove(id);
+      set({ orders: get().orders.filter((o) => o.id !== id) });
+      notifyLiveStoreSync(
+        'Order Deleted',
+        existing ? `Order #${existing.orderNumber} moved to trash.` : 'Order moved to trash.'
+      );
     },
     addOrderNote: async (orderId, content, isCustomerNote) => {
       await ordersApi.addNote(orderId, content, isCustomerNote);
@@ -826,8 +845,8 @@ export interface BackendSyncState {
   revenueHistory: BackendRevenuePoint[];
   topProducts: BackendTopProduct[];
   ordersByStatus: Record<string, number>;
-  /** The period (in days) the dashboard numbers cover. */
-  dashboardDays: number;
+  /** The period (in days or 'all') the dashboard numbers cover. */
+  dashboardDays: number | string;
   syncAll: () => Promise<boolean>;
   /** Reloads only the dashboard numbers (summary, chart, top products); accepts days or custom date range params. */
   refreshDashboard: (params?: number | string | DashboardDateParams) => Promise<void>;
@@ -861,7 +880,7 @@ export const useBackendSyncStore = create<BackendSyncState>((set, get) => ({
   revenueHistory: [],
   topProducts: [],
   ordersByStatus: {},
-  dashboardDays: 1,
+  dashboardDays: 'all',
 
   login: async (email, password) => {
     set({ status: 'syncing', errorMessage: null });
@@ -917,7 +936,7 @@ export const useBackendSyncStore = create<BackendSyncState>((set, get) => ({
 
   refreshDashboard: async (params) => {
     let queryParam: number | string | DashboardDateParams = params ?? get().dashboardDays;
-    if (typeof params === 'number') {
+    if (typeof params === 'number' || typeof params === 'string') {
       set({ dashboardDays: params });
     }
     try {

@@ -183,6 +183,7 @@ export function mapBackendOrder(o: BackendOrder): Order {
         ]
       : [],
     refunds: [],
+    customerNote: o.customer_note ?? undefined,
   };
 }
 

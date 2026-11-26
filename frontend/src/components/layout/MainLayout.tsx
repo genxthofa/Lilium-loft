@@ -19,7 +19,12 @@ export function MainLayout() {
 
   return (
     <div className="h-screen h-[100dvh] flex bg-slate-50/50 text-slate-900 font-sans antialiased overflow-hidden">
-      {isManualSyncing && <LoadingScreen />}
+      {isManualSyncing && (
+        <LoadingScreen
+          message="Website Sync in Progress..."
+          subMessage="Fetching the latest updates from your store. Please wait."
+        />
+      )}
       {/* Permanent Fixed Sidebar */}
       <Sidebar />
       <MobileNav />

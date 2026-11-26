@@ -167,13 +167,20 @@ class WooSyncService
             $meta = collect($o['meta_data'] ?? [])->mapWithKeys(
                 fn ($m) => isset($m['key']) ? [$m['key'] => $m['value'] ?? null] : []
             );
-            $isDispatched = (($o['status'] ?? null) === 'dispatch')
-                || (($meta->get('_order_dispatched') === 'yes') && (($o['status'] ?? null) === 'processing'));
+            $dashboardStatus = $meta->get('_dashboard_status');
+            $wooStatus = $o['status'] ?? 'pending';
+            $resolvedStatus = match (true) {
+                $wooStatus === 'processing' && $dashboardStatus === 'in-processing' => 'in-processing',
+                $wooStatus === 'processing' && $dashboardStatus === 'out-for-delivery' => 'out-for-delivery',
+                $wooStatus === 'processing' && ($dashboardStatus === 'dispatch' || $meta->get('_order_dispatched') === 'yes') => 'dispatch',
+                default => $wooStatus,
+            };
+            $isDispatched = in_array($resolvedStatus, ['dispatch', 'out-for-delivery', 'completed'], true);
             $existing = WooOrder::where('woo_id', $o['id'])->first();
 
             $order = WooOrder::updateOrCreate(['woo_id' => $o['id']], [
                 'number' => $o['number'],
-                'status' => $isDispatched ? 'dispatch' : $o['status'],
+                'status' => $resolvedStatus,
                 'courier_name' => $meta->get('_courier_name') ?: $existing?->courier_name,
                 'tracking_number' => $meta->get('_tracking_number') ?: $existing?->tracking_number,
                 'dispatched_at' => $isDispatched ? ($existing?->dispatched_at ?? now()) : $existing?->dispatched_at,

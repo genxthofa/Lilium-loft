@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\Write;
 
 use App\Http\Controllers\Controller;
 use App\Models\WooOrder;
+use App\Services\WhatsApp\InteraktService;
 use App\Services\WooCommerce\UpstreamUnavailable;
 use App\Services\WooCommerce\WooClient;
 use App\Services\WooCommerce\WooErrors;
@@ -19,7 +20,7 @@ use OpenApi\Attributes as OA;
 
 class OrderWriteController extends Controller
 {
-    public const STATUSES = ['pending', 'processing', 'on-hold', 'dispatch', 'completed', 'cancelled', 'refunded', 'failed'];
+    public const STATUSES = ['pending', 'processing', 'in-processing', 'on-hold', 'dispatch', 'out-for-delivery', 'completed', 'cancelled', 'refunded', 'failed'];
 
     public function __construct(
         private WooWriter $writer,
@@ -124,21 +125,25 @@ class OrderWriteController extends Controller
             'tracking_number' => 'nullable|string|max:255',
         ]);
 
-        $isDispatch = $data['status'] === 'dispatch';
-        $wooStatus = $isDispatch ? 'processing' : $data['status'];
+        $isProcessingMapped = in_array($data['status'], ['in-processing', 'dispatch', 'out-for-delivery'], true);
+        $wooStatus = $isProcessingMapped ? 'processing' : $data['status'];
 
         $wooPayload = ['status' => $wooStatus];
         $meta = [];
-        if ($isDispatch) {
-            $meta[] = ['key' => '_order_dispatched', 'value' => 'yes'];
+        if ($isProcessingMapped) {
+            $meta[] = ['key' => '_dashboard_status', 'value' => $data['status']];
+            if (in_array($data['status'], ['dispatch', 'out-for-delivery'], true)) {
+                $meta[] = ['key' => '_order_dispatched', 'value' => 'yes'];
+            }
             if (! empty($data['courier_name'])) {
                 $meta[] = ['key' => '_courier_name', 'value' => $data['courier_name']];
             }
             if (! empty($data['tracking_number'])) {
                 $meta[] = ['key' => '_tracking_number', 'value' => $data['tracking_number']];
             }
-        } elseif ($order->status === 'dispatch') {
-            $meta[] = ['key' => '_order_dispatched', 'value' => 'no'];
+        } elseif (in_array($order->status, ['in-processing', 'dispatch', 'out-for-delivery'], true)) {
+            $meta[] = ['key' => '_dashboard_status', 'value' => $data['status']];
+            $meta[] = ['key' => '_order_dispatched', 'value' => $data['status'] === 'completed' ? 'yes' : 'no'];
         }
         if ($meta !== []) {
             $wooPayload['meta_data'] = $meta;
@@ -147,16 +152,160 @@ class OrderWriteController extends Controller
         $this->writer->run('orders', 'status', $order->woo_id, $wooPayload, ['status' => $order->status], $request->user(), $request->ip(),
             fn (WooWriteClient $c) => $c->put("orders/{$order->woo_id}", $wooPayload));
 
-        if ($isDispatch) {
+        if ($isProcessingMapped) {
             $order->update([
-                'status' => 'dispatch',
+                'status' => $data['status'],
                 'courier_name' => $data['courier_name'] ?? $order->courier_name,
                 'tracking_number' => $data['tracking_number'] ?? $order->tracking_number,
-                'dispatched_at' => $order->dispatched_at ?? now(),
+                'dispatched_at' => in_array($data['status'], ['dispatch', 'out-for-delivery'], true)
+                    ? ($order->dispatched_at ?? now())
+                    : $order->dispatched_at,
             ]);
         }
 
-        return response()->json($this->refreshed($order));
+        $refreshed = $this->refreshed($order);
+
+        if ($data['status'] === 'processing') {
+            app(InteraktService::class)->sendOrderCreated($refreshed);
+        } elseif ($data['status'] === 'in-processing') {
+            app(InteraktService::class)->sendOrderProcessing($refreshed);
+        } elseif ($data['status'] === 'dispatch') {
+            app(InteraktService::class)->sendOrderDispatched($refreshed);
+        } elseif ($data['status'] === 'out-for-delivery') {
+            app(InteraktService::class)->sendOrderOutForDelivery($refreshed);
+        } elseif ($data['status'] === 'completed') {
+            app(InteraktService::class)->sendOrderCompleted($refreshed);
+        }
+
+        return response()->json($refreshed);
+    }
+
+    public function update(Request $request, int $id): JsonResponse
+    {
+        $order = WooOrder::findOrFail($id);
+        $data = $request->validate([
+            'status' => 'sometimes|required|in:'.implode(',', self::STATUSES),
+            'courier_name' => 'nullable|string|max:255',
+            'tracking_number' => 'nullable|string|max:255',
+            'customer_note' => 'nullable|string|max:2000',
+            'payment_method' => 'nullable|string|max:100',
+            'payment_method_title' => 'nullable|string|max:255',
+            'transaction_id' => 'nullable|string|max:255',
+            'billing' => 'sometimes|array',
+            'billing.first_name' => 'nullable|string|max:100',
+            'billing.last_name' => 'nullable|string|max:100',
+            'billing.email' => 'nullable|email|max:255',
+            'billing.phone' => 'nullable|string|max:50',
+            'billing.address_1' => 'nullable|string|max:255',
+            'billing.address_2' => 'nullable|string|max:255',
+            'billing.city' => 'nullable|string|max:100',
+            'billing.state' => 'nullable|string|max:100',
+            'billing.postcode' => 'nullable|string|max:30',
+            'billing.country' => 'nullable|string|max:10',
+            'shipping' => 'sometimes|array',
+            'shipping.first_name' => 'nullable|string|max:100',
+            'shipping.last_name' => 'nullable|string|max:100',
+            'shipping.phone' => 'nullable|string|max:50',
+            'shipping.address_1' => 'nullable|string|max:255',
+            'shipping.address_2' => 'nullable|string|max:255',
+            'shipping.city' => 'nullable|string|max:100',
+            'shipping.state' => 'nullable|string|max:100',
+            'shipping.postcode' => 'nullable|string|max:30',
+            'shipping.country' => 'nullable|string|max:10',
+        ]);
+
+        $wooPayload = [];
+        $newStatus = $data['status'] ?? null;
+        $isProcessingMapped = in_array($newStatus, ['in-processing', 'dispatch', 'out-for-delivery'], true);
+
+        if ($newStatus !== null) {
+            $wooPayload['status'] = $isProcessingMapped ? 'processing' : $newStatus;
+        }
+        foreach (['customer_note', 'payment_method', 'payment_method_title', 'transaction_id', 'billing', 'shipping'] as $field) {
+            if (array_key_exists($field, $data)) {
+                $wooPayload[$field] = $data[$field];
+            }
+        }
+
+        $meta = [];
+        if ($isProcessingMapped) {
+            $meta[] = ['key' => '_dashboard_status', 'value' => $newStatus];
+            if (in_array($newStatus, ['dispatch', 'out-for-delivery'], true)) {
+                $meta[] = ['key' => '_order_dispatched', 'value' => 'yes'];
+            }
+            if (! empty($data['courier_name'])) {
+                $meta[] = ['key' => '_courier_name', 'value' => $data['courier_name']];
+            }
+            if (! empty($data['tracking_number'])) {
+                $meta[] = ['key' => '_tracking_number', 'value' => $data['tracking_number']];
+            }
+        } elseif ($newStatus !== null && in_array($order->status, ['in-processing', 'dispatch', 'out-for-delivery'], true)) {
+            $meta[] = ['key' => '_dashboard_status', 'value' => $newStatus];
+            $meta[] = ['key' => '_order_dispatched', 'value' => $newStatus === 'completed' ? 'yes' : 'no'];
+        }
+        if ($meta !== []) {
+            $wooPayload['meta_data'] = $meta;
+        }
+
+        $this->writer->run('orders', 'update', $order->woo_id, $wooPayload, ['status' => $order->status], $request->user(), $request->ip(),
+            fn (WooWriteClient $c) => $c->put("orders/{$order->woo_id}", $wooPayload));
+
+        if ($isProcessingMapped) {
+            $order->update([
+                'status' => $newStatus,
+                'courier_name' => $data['courier_name'] ?? $order->courier_name,
+                'tracking_number' => $data['tracking_number'] ?? $order->tracking_number,
+                'dispatched_at' => in_array($newStatus, ['dispatch', 'out-for-delivery'], true)
+                    ? ($order->dispatched_at ?? now())
+                    : $order->dispatched_at,
+            ]);
+        }
+
+        $refreshed = $this->refreshed($order);
+
+        if (($data['status'] ?? null) === 'processing') {
+            app(InteraktService::class)->sendOrderCreated($refreshed);
+        } elseif (($data['status'] ?? null) === 'in-processing') {
+            app(InteraktService::class)->sendOrderProcessing($refreshed);
+        } elseif (($data['status'] ?? null) === 'dispatch') {
+            app(InteraktService::class)->sendOrderDispatched($refreshed);
+        } elseif (($data['status'] ?? null) === 'out-for-delivery') {
+            app(InteraktService::class)->sendOrderOutForDelivery($refreshed);
+        } elseif (($data['status'] ?? null) === 'completed') {
+            app(InteraktService::class)->sendOrderCompleted($refreshed);
+        }
+
+        return response()->json($refreshed);
+    }
+
+    public function destroy(Request $request, int $id): JsonResponse
+    {
+        $order = WooOrder::findOrFail($id);
+
+        $this->writer->run('orders', 'delete', $order->woo_id, ['force' => false], $order->attributesToArray(), $request->user(), $request->ip(),
+            fn (WooWriteClient $c) => $c->delete("orders/{$order->woo_id}", false));
+
+        $this->writer->mirror(fn () => $this->sync->forget('order', $order->woo_id));
+
+        return response()->json(null, 204);
+    }
+
+    public function sendWhatsApp(int $id, InteraktService $interakt): JsonResponse
+    {
+        $order = WooOrder::with('items')->findOrFail($id);
+
+        $sent = match ($order->status) {
+            'in-processing' => $interakt->sendOrderProcessing($order),
+            'dispatch' => $interakt->sendOrderDispatched($order),
+            'out-for-delivery' => $interakt->sendOrderOutForDelivery($order),
+            'completed' => $interakt->sendOrderCompleted($order),
+            default => $interakt->sendOrderCreated($order),
+        };
+
+        return response()->json([
+            'sent' => $sent,
+            'configured' => $interakt->isConfigured(),
+        ]);
     }
 
     #[OA\Post(

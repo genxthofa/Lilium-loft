@@ -227,8 +227,8 @@ export function ProductsListPage() {
             >
               <span>{tab.label}</span>
               <span
-                className={`px-1.5 py-0.2 rounded-full text-[10px] ${
-                  isActive ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-700'
+                className={`px-2 py-0.5 rounded-full text-xs font-bold leading-none ${
+                  isActive ? 'bg-white text-black' : 'bg-red-600 text-white'
                 }`}
               >
                 {tab.count}
@@ -612,15 +612,12 @@ export function ProductsListPage() {
                         {product.categories.length > 0 && (
                           <div className="flex items-center gap-1 mt-1.5 flex-wrap">
                             {product.categories.slice(0, 2).map((cat) => (
-                              <span
-                                key={cat}
-                                className="inline-block px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 text-[10px]"
-                              >
+                              <Badge key={cat} variant="secondary">
                                 {cat}
-                              </span>
+                              </Badge>
                             ))}
                             {product.categories.length > 2 && (
-                              <span className="text-[10px] text-slate-400">
+                              <span className="text-xs text-slate-400">
                                 +{product.categories.length - 2} more
                               </span>
                             )}
@@ -718,12 +715,9 @@ export function ProductsListPage() {
                         <TableCell>
                           <div className="flex flex-wrap gap-1">
                             {product.categories.slice(0, 2).map((cat) => (
-                              <span
-                                key={cat}
-                                className="inline-block px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 text-[10px]"
-                              >
+                              <Badge key={cat} variant="secondary">
                                 {cat}
-                              </span>
+                              </Badge>
                             ))}
                           </div>
                         </TableCell>

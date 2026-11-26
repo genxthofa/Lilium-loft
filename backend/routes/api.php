@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CategoryController;
 use App\Http\Controllers\Api\CouponController;
 use App\Http\Controllers\Api\CustomerController;
+use App\Http\Controllers\Api\CustomerInvoiceController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\OrderController;
@@ -98,7 +99,10 @@ Route::prefix('v1')->group(function () {
         Route::post('products/trash/{wooId}/restore', [ProductTrashController::class, 'restore'])->whereNumber('wooId')->middleware('woo.write:products.delete');
         Route::delete('products/{id}', [ProductWriteController::class, 'destroy'])->whereNumber('id')->middleware('woo.write:products.delete');
 
+        Route::match(['put', 'patch'], 'orders/{id}', [OrderWriteController::class, 'update'])->whereNumber('id')->middleware('woo.write:orders.update');
+        Route::delete('orders/{id}', [OrderWriteController::class, 'destroy'])->whereNumber('id')->middleware('woo.write:orders.update');
         Route::put('orders/{id}/status', [OrderWriteController::class, 'status'])->whereNumber('id')->middleware('woo.write:orders.update');
+        Route::post('orders/{id}/whatsapp', [OrderWriteController::class, 'sendWhatsApp'])->whereNumber('id')->middleware('woo.write:orders.update');
         Route::post('orders/{id}/notes', [OrderWriteController::class, 'addNote'])->whereNumber('id')->middleware('woo.write:orders.note');
         Route::post('orders/{id}/refunds', [OrderWriteController::class, 'addRefund'])->whereNumber('id')->middleware('woo.write:orders.refund');
 
@@ -125,6 +129,16 @@ Route::prefix('v1')->group(function () {
         Route::match(['put', 'patch'], 'settings/{group}/{id}', [SettingsWriteController::class, 'update'])->where(['group' => '[A-Za-z0-9_-]+', 'id' => '[A-Za-z0-9_]+'])->middleware('woo.write:settings.update');
     });
 });
+
+// Signed public Non-GST Customer Invoice & Packing Slip endpoints for WhatsApp / Interakt delivery.
+Route::get('v1/public/orders/{id}/customer-invoice', [CustomerInvoiceController::class, 'show'])
+    ->whereNumber('id')
+    ->name('orders.customer-invoice.public')
+    ->middleware('signed');
+Route::get('v1/public/orders/{id}/packing-slip', [CustomerInvoiceController::class, 'packingSlip'])
+    ->whereNumber('id')
+    ->name('orders.packing-slip.public')
+    ->middleware('signed');
 
 // WooCommerce calls this itself, so there is no JWT and no /v1 prefix (URL: /api/webhooks/woocommerce).
 // The HMAC signature is verified inside the controller before anything is stored.

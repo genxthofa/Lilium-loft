@@ -113,11 +113,15 @@ export function DashboardPage() {
   const getOrderStatusBadge = (status: string) => {
     switch (status) {
       case 'completed':
-        return <Badge variant="success">Completed</Badge>;
+        return <Badge variant="success">Delivered</Badge>;
       case 'processing':
         return <Badge variant="info">Order Placed</Badge>;
+      case 'in-processing':
+        return <Badge variant="info">Processing</Badge>;
       case 'dispatch':
         return <Badge variant="purple">Dispatched</Badge>;
+      case 'out-for-delivery':
+        return <Badge variant="warning">Out for Delivery</Badge>;
       case 'on-hold':
         return <Badge variant="warning">On-Hold</Badge>;
       case 'pending':
@@ -151,7 +155,7 @@ export function DashboardPage() {
             onValueChange={(v) => {
               setSelectedPeriod(v);
               if (v !== 'custom') {
-                refreshDashboard(Number(v));
+                refreshDashboard(v === 'all' ? 'all' : Number(v));
               }
             }}
           >
@@ -160,6 +164,7 @@ export function DashboardPage() {
               <SelectValue placeholder="Period" />
             </SelectTrigger>
             <SelectContent>
+              <SelectItem value="all">All Time</SelectItem>
               <SelectItem value="1">Today</SelectItem>
               <SelectItem value="7">Last 7 Days</SelectItem>
               <SelectItem value="30">Last 30 Days</SelectItem>

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Dialog,
@@ -17,10 +17,14 @@ import {
   CreditCard,
   Calendar,
   Truck,
+  MessageCircle,
 } from 'lucide-react';
 import { Order } from '@/types';
 import { formatCurrency, formatDateTime } from '@/utils/formatters';
 import { useProductStore, useUIStore } from '@/store';
+import { InvoiceModal } from './InvoiceModal';
+import { shareOrderOnWhatsApp } from '@/utils/whatsapp';
+import { toast } from 'sonner';
 
 interface OrderDetailModalProps {
   order: Order | null;
@@ -38,6 +42,7 @@ export function OrderDetailModal({
   const navigate = useNavigate();
   const products = useProductStore((s) => s.products);
   const { generatedInvoiceIds, generateInvoice } = useUIStore();
+  const [customerInvoiceOpen, setCustomerInvoiceOpen] = useState(false);
 
   if (!order) return null;
 
@@ -46,11 +51,15 @@ export function OrderDetailModal({
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'completed':
-        return <Badge variant="success">Completed</Badge>;
+        return <Badge variant="success">Delivered</Badge>;
       case 'processing':
         return <Badge variant="info">Order Placed</Badge>;
+      case 'in-processing':
+        return <Badge variant="info">Processing</Badge>;
       case 'dispatch':
         return <Badge variant="purple">Dispatched</Badge>;
+      case 'out-for-delivery':
+        return <Badge variant="warning">Out for Delivery</Badge>;
       case 'on-hold':
         return <Badge variant="warning">On-Hold</Badge>;
       case 'pending':
@@ -102,6 +111,7 @@ export function OrderDetailModal({
   const subtotal = order.items.reduce((acc, item) => acc + (item.total || item.price * item.quantity), 0);
 
   return (
+    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto p-4 sm:p-6">
         <DialogHeader className="pb-3 border-b border-slate-100">
@@ -246,25 +256,44 @@ export function OrderDetailModal({
 
         {/* Action Buttons */}
         <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100">
-          <div>
-            {onViewInvoice && (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  if (!isGenerated) {
-                    generateInvoice(order.id);
-                  }
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                if (!isGenerated) {
+                  generateInvoice(order.id);
+                }
+                if (onViewInvoice) {
                   onOpenChange(false);
                   onViewInvoice(order);
-                }}
-                className="gap-1.5 text-xs text-slate-700 bg-white"
-              >
-                <FileText className="h-3.5 w-3.5 text-red-600" />
-                <span>{isGenerated ? 'View Invoice' : 'Generate Invoice'}</span>
-              </Button>
-            )}
+                } else {
+                  setCustomerInvoiceOpen(true);
+                }
+              }}
+              className="gap-1.5 text-xs text-slate-700 bg-white"
+            >
+              <FileText className="h-3.5 w-3.5 text-red-600" />
+              <span>Customer Invoice</span>
+            </Button>
+
+            <Button
+              type="button"
+              size="sm"
+              onClick={async () => {
+                try {
+                  await shareOrderOnWhatsApp(order);
+                  toast.success('Customer invoice downloaded & WhatsApp opened!');
+                } catch {
+                  toast.error('Failed to share on WhatsApp');
+                }
+              }}
+              className="gap-1.5 text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
+            >
+              <MessageCircle className="h-3.5 w-3.5" />
+              <span>WhatsApp</span>
+            </Button>
           </div>
           <div className="flex items-center gap-2">
             <Button
@@ -292,5 +321,13 @@ export function OrderDetailModal({
         </div>
       </DialogContent>
     </Dialog>
+
+    <InvoiceModal
+      order={order}
+      open={customerInvoiceOpen}
+      onOpenChange={setCustomerInvoiceOpen}
+      variant="customer"
+    />
+    </>
   );
 }

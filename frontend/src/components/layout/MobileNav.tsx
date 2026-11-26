@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard,
@@ -8,7 +8,7 @@ import {
   Boxes,
   TicketPercent,
   BarChart3,
-  Truck,
+  // Truck,
   CreditCard,
   Settings,
   X,
@@ -19,12 +19,16 @@ import {
   PlusCircle,
   FolderTree,
   Trash2,
+  Receipt,
 } from 'lucide-react';
-import { useUIStore } from '@/store';
+import { useUIStore, useOrderStore } from '@/store';
 import { cn } from '@/utils/cn';
+import { getRecentOrdersCount } from '@/utils/orders';
 
 export function MobileNav() {
   const { mobileMenuOpen, setMobileMenuOpen } = useUIStore();
+  const orders = useOrderStore((s) => s.orders);
+  const recentOrdersCount = useMemo(() => getRecentOrdersCount(orders), [orders]);
   const location = useLocation();
 
   // Escape closes the menu (keyboard and screen-reader users could not dismiss it before).
@@ -53,11 +57,17 @@ export function MobileNav() {
         { title: 'Trash', href: '/products/trash', icon: Trash2 },
       ],
     },
-    { title: 'Orders', href: '/orders', icon: ShoppingCart },
+    {
+      title: 'Orders',
+      href: '/orders',
+      icon: ShoppingCart,
+      badge: recentOrdersCount > 0 ? recentOrdersCount : undefined,
+    },
+    { title: 'GST', href: '/gst', icon: Receipt },
     { title: 'Customers', href: '/customers', icon: Users },
     { title: 'Inventory', href: '/inventory', icon: Boxes },
     { title: 'Reports', href: '/reports', icon: BarChart3 },
-    { title: 'Shipping', href: '/shipping', icon: Truck },
+    // { title: 'Shipping', href: '/shipping', icon: Truck },
     { title: 'Payments', href: '/payments', icon: CreditCard },
     { title: 'Settings', href: '/settings', icon: Settings },
   ];
@@ -155,14 +165,21 @@ export function MobileNav() {
                 to={item.href}
                 onClick={() => setMobileMenuOpen(false)}
                 className={cn(
-                  'flex items-center gap-3 px-3 py-2.5 rounded-lg text-[15px] font-medium transition-colors',
+                  'flex items-center justify-between px-3 py-2.5 rounded-lg text-[15px] font-medium transition-colors',
                   isActive
                     ? 'bg-red-50 text-red-600 font-semibold'
                     : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
                 )}
               >
-                <Icon className={cn('h-5 w-5', isActive ? 'text-red-600' : 'text-slate-500')} />
-                <span>{item.title}</span>
+                <div className="flex items-center gap-3">
+                  <Icon className={cn('h-5 w-5', isActive ? 'text-red-600' : 'text-slate-500')} />
+                  <span>{item.title}</span>
+                </div>
+                {Boolean((item as { badge?: number }).badge) && Number((item as { badge?: number }).badge) > 0 && (
+                  <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1.5 text-xs font-bold text-white">
+                    {(item as { badge?: number }).badge}
+                  </span>
+                )}
               </NavLink>
             );
           })}

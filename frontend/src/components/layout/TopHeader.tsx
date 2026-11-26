@@ -78,7 +78,7 @@ export function TopHeader() {
           title={lastSynced ? `Last loaded: ${new Date(lastSynced).toLocaleTimeString()}. Click to import the latest from WooCommerce.` : 'Import the latest from WooCommerce'}
         >
           <RefreshCw className={`h-3.5 w-3.5 ${status === 'syncing' ? 'animate-spin' : ''}`} />
-          <span>{status === 'connected' ? 'Sync' : 'Connect API'}</span>
+          <span>{status === 'connected' ? 'Sync Website' : 'Connect API'}</span>
         </Button>
 
         <Button
@@ -99,7 +99,7 @@ export function TopHeader() {
           title="Import the latest from WooCommerce"
         >
           <RefreshCw className={`h-5 w-5 ${status === 'syncing' ? 'animate-spin' : ''}`} />
-          <span className="sr-only">Sync</span>
+          <span className="sr-only">Sync Website</span>
         </Button>
 
         <div className="h-4 w-px bg-slate-200 hidden sm:block" />

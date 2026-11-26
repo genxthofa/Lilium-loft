@@ -7,7 +7,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Printer, Download, FileText, Loader2 } from 'lucide-react';
+import { Printer, Download, FileText, Loader2, MessageCircle } from 'lucide-react';
 import { Order } from '@/types';
 import { formatCurrency } from '@/utils/formatters';
 import {
@@ -17,21 +17,34 @@ import {
   printInvoice,
   downloadInvoicePDF,
   computeInvoiceCalculations,
+  computeCustomerInvoiceCalculations,
+  printCustomerInvoice,
+  downloadCustomerInvoicePDF,
   formatPlainNumber,
 } from '@/utils/invoice';
+import { shareOrderOnWhatsApp } from '@/utils/whatsapp';
 import { toast } from 'sonner';
 
 interface InvoiceModalProps {
   order: Order | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  variant?: 'gst' | 'customer';
 }
 
-export function InvoiceModal({ order, open, onOpenChange }: InvoiceModalProps) {
+export function InvoiceModal({
+  order,
+  open,
+  onOpenChange,
+  variant = 'gst',
+}: InvoiceModalProps) {
   const invoiceRef = useRef<HTMLDivElement>(null);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [isSharing, setIsSharing] = useState(false);
 
   if (!order) return null;
+
+  const isCustomer = variant === 'customer';
 
   const invoiceNo = getInvoiceNumber(order);
   const orderDate = formatInvoiceDate(order.dateCreated);
@@ -59,16 +72,25 @@ export function InvoiceModal({ order, open, onOpenChange }: InvoiceModalProps) {
   const shipPhone = order.shipping?.phone || billPhone;
 
   const calc = computeInvoiceCalculations(order);
+  const customerCalc = computeCustomerInvoiceCalculations(order);
 
   const handlePrint = () => {
-    printInvoice(order);
+    if (isCustomer) {
+      printCustomerInvoice(order);
+    } else {
+      printInvoice(order);
+    }
   };
 
   const handleDownload = async () => {
     try {
       setIsDownloading(true);
       toast.loading('Downloading invoice PDF...', { id: 'invoice-pdf-download' });
-      await downloadInvoicePDF(order);
+      if (isCustomer) {
+        await downloadCustomerInvoicePDF(order);
+      } else {
+        await downloadInvoicePDF(order);
+      }
       toast.success('Invoice PDF downloaded successfully!', { id: 'invoice-pdf-download' });
     } catch (err) {
       console.error('Download PDF error:', err);
@@ -78,31 +100,62 @@ export function InvoiceModal({ order, open, onOpenChange }: InvoiceModalProps) {
     }
   };
 
+  const handleWhatsAppShare = async () => {
+    try {
+      setIsSharing(true);
+      toast.loading('Preparing customer invoice for WhatsApp...', { id: 'wa-share' });
+      await shareOrderOnWhatsApp(order);
+      toast.success('Customer invoice downloaded & WhatsApp opened!', { id: 'wa-share' });
+    } catch (err) {
+      console.error('WhatsApp share error:', err);
+      toast.error('Failed to share invoice on WhatsApp', { id: 'wa-share' });
+    } finally {
+      setIsSharing(false);
+    }
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="w-[96vw] max-w-[940px] sm:max-w-[940px] md:max-w-[940px] lg:max-w-[940px] p-0 overflow-hidden bg-slate-100 max-h-[94vh] flex flex-col sm:rounded-xl border border-slate-300 shadow-2xl">
         {/* Top Actions Bar */}
-        <DialogHeader className="p-3.5 sm:p-4 px-4 sm:px-6 bg-white border-b border-slate-200 flex flex-row items-center justify-between space-y-0 shrink-0">
+        <DialogHeader className="p-3.5 sm:p-4 px-4 sm:px-6 bg-transparent flex flex-row items-center justify-between space-y-0 shrink-0">
           <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 pr-2">
-            <div className="h-9 w-9 rounded-lg bg-red-50 text-red-700 flex items-center justify-center shrink-0">
-              <FileText className="h-5 w-5" />
-            </div>
+            <FileText className="h-5 w-5 text-red-700 shrink-0" />
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
                 <DialogTitle className="text-sm sm:text-base font-bold text-slate-900 truncate">
                   Invoice: {invoiceNo}
                 </DialogTitle>
-                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-red-50 text-red-700 border border-red-200 tracking-wide shrink-0">
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold text-red-700 border border-red-200 tracking-wide shrink-0">
                   Order #{order.orderNumber}
                 </span>
               </div>
               <p className="text-[11px] sm:text-xs text-slate-500 mt-0.5 truncate">
-                Official Lilium & Loft store tax invoice
+                {isCustomer
+                  ? 'Customer invoice (without GST)'
+                  : 'Official Lilium & Loft store tax invoice'}
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-2 shrink-0 pr-7">
+            {isCustomer && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleWhatsAppShare}
+                disabled={isSharing}
+                className="h-8 gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600 hover:border-emerald-700"
+                title="Share on WhatsApp"
+              >
+                {isSharing ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <MessageCircle className="h-3.5 w-3.5" />
+                )}
+                <span className="hidden sm:inline text-xs">WhatsApp</span>
+              </Button>
+            )}
             <Button
               variant="outline"
               size="icon"
@@ -131,11 +184,12 @@ export function InvoiceModal({ order, open, onOpenChange }: InvoiceModalProps) {
         </DialogHeader>
 
         {/* Scrollable Invoice Sheet Container */}
-        <div className="p-2 sm:p-5 overflow-y-auto flex-1 flex justify-center bg-slate-100/90">
+        <div className="p-2 sm:p-5 overflow-y-auto flex-1 min-h-0 bg-slate-100/90">
           <div
             ref={invoiceRef}
-            className="w-full max-w-[860px] bg-white rounded shadow-sm border border-slate-200/90 p-4 sm:p-8 text-slate-800 text-xs font-sans relative"
+            className="mx-auto w-full max-w-[794px] sm:min-h-[1060px] bg-white rounded shadow-sm border border-slate-200/90 p-4 pb-6 sm:p-10 sm:pb-8 text-slate-800 text-xs font-sans relative flex flex-col justify-between"
           >
+            <div>
             {/* Top Grid: Left (Invoice + Logo), Middle (spacer), Right (From) */}
             <div className="grid grid-cols-1 sm:grid-cols-[38%_30%_32%] gap-4 mb-6 items-start">
               <div className="flex flex-col gap-2.5">
@@ -156,8 +210,13 @@ export function InvoiceModal({ order, open, onOpenChange }: InvoiceModalProps) {
                 Lilium and Loft Crochet Studio<br />
                 45 (13), 2nd Cross, Venkata Nagar<br />
                 605011<br />
-                Pondicherry (Puducherry)<br />
-                GSTIN: 34ABHPV4968N1ZQ
+                Pondicherry (Puducherry)
+                {!isCustomer && (
+                  <>
+                    <br />
+                    GSTIN: 34ABHPV4968N1ZQ
+                  </>
+                )}
               </div>
             </div>
 
@@ -203,42 +262,95 @@ export function InvoiceModal({ order, open, onOpenChange }: InvoiceModalProps) {
               </div>
             </div>
 
-            {/* GST Items Table */}
+            {/* Items Table */}
             <div className="overflow-x-auto mt-5 -mx-1 sm:mx-0">
-              <table className="w-full border-collapse text-xs min-w-[600px] border border-slate-600">
-                <thead>
-                  <tr className="bg-white text-slate-900 font-bold">
-                    <th rowSpan={2} className="border border-slate-600 py-2 px-2 text-center w-9">#</th>
-                    <th rowSpan={2} className="border border-slate-600 py-2 px-2.5 text-left">Item &amp; Description</th>
-                    <th rowSpan={2} className="border border-slate-600 py-2 px-2 text-right w-16">Qty</th>
-                    <th rowSpan={2} className="border border-slate-600 py-2 px-2 text-right w-24">Rate</th>
-                    <th colSpan={2} className="border border-slate-600 py-1.5 px-2 text-center">CGST</th>
-                    <th colSpan={2} className="border border-slate-600 py-1.5 px-2 text-center">SGST</th>
-                    <th rowSpan={2} className="border border-slate-600 py-2 px-2.5 text-right w-24">Amount</th>
-                  </tr>
-                  <tr className="bg-white text-slate-900 font-bold">
-                    <th className="border border-slate-600 py-1 px-2 text-center w-12">%</th>
-                    <th className="border border-slate-600 py-1 px-2 text-right w-20">Amt</th>
-                    <th className="border border-slate-600 py-1 px-2 text-center w-12">%</th>
-                    <th className="border border-slate-600 py-1 px-2 text-right w-20">Amt</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {calc.items.map((item, idx) => (
-                    <tr key={idx} className="text-slate-800 bg-white">
-                      <td className="border border-slate-600 py-2.5 px-2 text-center">{idx + 1}</td>
-                      <td className="border border-slate-600 py-2.5 px-2.5 font-medium text-slate-900">{item.name}</td>
-                      <td className="border border-slate-600 py-2.5 px-2 text-right">{item.qty.toFixed(2)}</td>
-                      <td className="border border-slate-600 py-2.5 px-2 text-right">{formatPlainNumber(item.rate)}</td>
-                      <td className="border border-slate-600 py-2.5 px-2 text-center">{item.cgstPct}%</td>
-                      <td className="border border-slate-600 py-2.5 px-2 text-right">{formatPlainNumber(item.cgstAmt)}</td>
-                      <td className="border border-slate-600 py-2.5 px-2 text-center">{item.sgstPct}%</td>
-                      <td className="border border-slate-600 py-2.5 px-2 text-right">{formatPlainNumber(item.sgstAmt)}</td>
-                      <td className="border border-slate-600 py-2.5 px-2.5 text-right font-medium text-slate-900">{formatPlainNumber(item.amount)}</td>
+              {isCustomer ? (
+                <table className="w-full border-collapse text-xs min-w-[540px] border border-slate-600">
+                  <thead>
+                    <tr className="bg-slate-100 text-slate-900 font-bold leading-tight">
+                      <th className="border border-slate-600 py-1 px-1.5 text-center w-10">S.No</th>
+                      <th className="border border-slate-600 py-1 px-1.5 text-center w-14">Image</th>
+                      <th className="border border-slate-600 py-1 px-2.5 text-left">Item</th>
+                      <th className="border border-slate-600 py-1 px-2 text-right w-16">Qty</th>
+                      <th className="border border-slate-600 py-1 px-2 text-right w-24">Rate</th>
+                      <th className="border border-slate-600 py-1 px-2.5 text-right w-28">Amount</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {customerCalc.items.map((item, idx) => (
+                      <tr key={idx} className="text-slate-800 bg-white">
+                        <td className="border border-slate-600 py-2 px-1.5 text-center">{idx + 1}</td>
+                        <td className="border border-slate-600 py-1.5 px-1.5 text-center">
+                          {item.image ? (
+                            <img
+                              src={item.image}
+                              alt={item.name}
+                              className="h-10 w-10 object-cover rounded border border-slate-200 mx-auto"
+                              referrerPolicy="no-referrer"
+                            />
+                          ) : (
+                            <span className="text-slate-400">—</span>
+                          )}
+                        </td>
+                        <td className="border border-slate-600 py-2 px-2.5 font-medium text-slate-900">{item.name}</td>
+                        <td className="border border-slate-600 py-2 px-2 text-right">{item.qty.toFixed(2)}</td>
+                        <td className="border border-slate-600 py-2 px-2 text-right">{formatPlainNumber(item.rate)}</td>
+                        <td className="border border-slate-600 py-2 px-2.5 text-right font-medium text-slate-900">{formatPlainNumber(item.amount)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <table className="w-full border-collapse text-xs min-w-[660px] border border-slate-600">
+                  <thead>
+                    <tr className="bg-slate-100 text-slate-900 font-bold leading-tight">
+                      <th rowSpan={2} className="border border-slate-600 py-1 px-1.5 text-center w-10">S.No</th>
+                      <th rowSpan={2} className="border border-slate-600 py-1 px-1.5 text-center w-14">Image</th>
+                      <th rowSpan={2} className="border border-slate-600 py-1 px-2.5 text-left">Item</th>
+                      <th rowSpan={2} className="border border-slate-600 py-1 px-2 text-right w-14">Qty</th>
+                      <th rowSpan={2} className="border border-slate-600 py-1 px-2 text-right w-20">Rate</th>
+                      <th rowSpan={2} className="border border-slate-600 py-1 px-2 text-right w-18">Shipping</th>
+                      <th colSpan={2} className="border border-slate-600 py-0.5 px-2 text-center">CGST</th>
+                      <th colSpan={2} className="border border-slate-600 py-0.5 px-2 text-center">SGST</th>
+                      <th rowSpan={2} className="border border-slate-600 py-1 px-2.5 text-right w-22">Amount</th>
+                    </tr>
+                    <tr className="bg-slate-100 text-slate-900 font-bold leading-tight">
+                      <th className="border border-slate-600 py-0.5 px-1.5 text-center w-10">%</th>
+                      <th className="border border-slate-600 py-0.5 px-2 text-center w-16">Amt</th>
+                      <th className="border border-slate-600 py-0.5 px-1.5 text-center w-10">%</th>
+                      <th className="border border-slate-600 py-0.5 px-2 text-center w-16">Amt</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {calc.items.map((item, idx) => (
+                      <tr key={idx} className="text-slate-800 bg-white">
+                        <td className="border border-slate-600 py-2 px-1.5 text-center">{idx + 1}</td>
+                        <td className="border border-slate-600 py-1.5 px-1.5 text-center">
+                          {item.image ? (
+                            <img
+                              src={item.image}
+                              alt={item.name}
+                              className="h-10 w-10 object-cover rounded border border-slate-200 mx-auto"
+                              referrerPolicy="no-referrer"
+                            />
+                          ) : (
+                            <span className="text-slate-400">—</span>
+                          )}
+                        </td>
+                        <td className="border border-slate-600 py-2 px-2.5 font-medium text-slate-900">{item.name}</td>
+                        <td className="border border-slate-600 py-2 px-2 text-right">{item.qty.toFixed(2)}</td>
+                        <td className="border border-slate-600 py-2 px-2 text-right">{formatPlainNumber(item.rate)}</td>
+                        <td className="border border-slate-600 py-2 px-2 text-right">{formatPlainNumber(item.shipping)}</td>
+                        <td className="border border-slate-600 py-2 px-1.5 text-center">{item.cgstPct}%</td>
+                        <td className="border border-slate-600 py-2 px-2 text-right">{formatPlainNumber(item.cgstAmt)}</td>
+                        <td className="border border-slate-600 py-2 px-1.5 text-center">{item.sgstPct}%</td>
+                        <td className="border border-slate-600 py-2 px-2 text-right">{formatPlainNumber(item.sgstAmt)}</td>
+                        <td className="border border-slate-600 py-2 px-2.5 text-right font-medium text-slate-900">{formatPlainNumber(item.amount)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
             </div>
 
             {/* Bottom section with stamp and totals */}
@@ -251,40 +363,69 @@ export function InvoiceModal({ order, open, onOpenChange }: InvoiceModalProps) {
               </div>
 
               {/* Totals Table */}
-              <div className="w-full sm:w-[42%] space-y-1.5 text-xs">
-                <div className="flex justify-between py-1 text-slate-700">
-                  <span>Subtotal</span>
-                  <span>{formatCurrency(calc.subtotal, order.currency)}</span>
-                </div>
-                <div className="flex justify-between py-1 text-slate-700">
-                  <span>Shipping</span>
-                  <span>
-                    {calc.shipping > 0
-                      ? formatCurrency(calc.shipping, order.currency)
-                      : 'Free'}
-                  </span>
-                </div>
-                <div className="flex justify-between py-1 text-slate-700">
-                  <span>CGST (9%)</span>
-                  <span>{formatCurrency(calc.totalCgst, order.currency)}</span>
-                </div>
-                <div className="flex justify-between py-1 text-slate-700">
-                  <span>SGST (9%)</span>
-                  <span>{formatCurrency(calc.totalSgst, order.currency)}</span>
-                </div>
-                {calc.discount > 0 && (
-                  <div className="flex justify-between py-1 text-emerald-600">
-                    <span>Discount</span>
-                    <span>-{formatCurrency(calc.discount, order.currency)}</span>
+              {isCustomer ? (
+                <div className="w-full sm:w-[42%] space-y-1.5 text-xs">
+                  <div className="flex justify-between py-1 text-slate-700">
+                    <span>Subtotal</span>
+                    <span>{formatCurrency(customerCalc.subtotal, order.currency)}</span>
                   </div>
-                )}
-                <div className="flex justify-between pt-2.5 mt-1 border-t border-slate-200 text-sm font-bold text-slate-900">
-                  <span>Total</span>
-                  <span className="text-base text-slate-900">
-                    {formatCurrency(calc.total, order.currency)}
-                  </span>
+                  <div className="flex justify-between py-1 text-slate-700">
+                    <span>Shipping</span>
+                    <span>
+                      {customerCalc.shipping > 0
+                        ? formatCurrency(customerCalc.shipping, order.currency)
+                        : 'Free'}
+                    </span>
+                  </div>
+                  {customerCalc.discount > 0 && (
+                    <div className="flex justify-between py-1 text-emerald-600">
+                      <span>Discount</span>
+                      <span>-{formatCurrency(customerCalc.discount, order.currency)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between pt-2.5 mt-1 border-t border-slate-200 text-sm font-bold text-slate-900">
+                    <span>Grand Total</span>
+                    <span className="text-base text-slate-900">
+                      {formatCurrency(customerCalc.total, order.currency)}
+                    </span>
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <div className="w-full sm:w-[42%] space-y-1.5 text-xs">
+                  <div className="flex justify-between py-1 text-slate-700">
+                    <span>Subtotal</span>
+                    <span>{formatCurrency(calc.subtotal, order.currency)}</span>
+                  </div>
+                  <div className="flex justify-between py-1 text-slate-700">
+                    <span>CGST (9%)</span>
+                    <span>{formatCurrency(calc.totalCgst, order.currency)}</span>
+                  </div>
+                  <div className="flex justify-between py-1 text-slate-700">
+                    <span>SGST (9%)</span>
+                    <span>{formatCurrency(calc.totalSgst, order.currency)}</span>
+                  </div>
+                  {calc.discount > 0 && (
+                    <div className="flex justify-between py-1 text-emerald-600">
+                      <span>Discount</span>
+                      <span>-{formatCurrency(calc.discount, order.currency)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between pt-2.5 mt-1 border-t border-slate-200 text-sm font-bold text-slate-900">
+                    <span>Grand Total</span>
+                    <span className="text-base text-slate-900">
+                      {formatCurrency(calc.total, order.currency)}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+            </div>
+
+            {/* Bottom A4 Footer */}
+            <div className="pt-8 text-center text-[11.5px] text-slate-600">
+              {isCustomer
+                ? 'Lilium and Loft Crochet Studio — Thank you for your order!'
+                : 'GSTIN: 34ABHPV4968N1ZQ'}
             </div>
           </div>
         </div>

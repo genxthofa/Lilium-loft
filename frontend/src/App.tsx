@@ -15,6 +15,7 @@ import { CategoriesPage } from '@/pages/products/CategoriesPage';
 import { TrashPage } from '@/pages/products/TrashPage';
 import { OrdersListPage } from '@/pages/orders/OrdersListPage';
 import { OrderDetailPage } from '@/pages/orders/OrderDetailPage';
+import { GstPage } from '@/pages/gst/GstPage';
 import { CustomersListPage } from '@/pages/customers/CustomersListPage';
 import { CustomerDetailPage } from '@/pages/customers/CustomerDetailPage';
 import { InventoryPage } from '@/pages/inventory/InventoryPage';
@@ -51,6 +52,9 @@ export function App() {
               {/* 3. Orders */}
               <Route path="orders" element={<OrdersListPage />} />
               <Route path="orders/:id" element={<OrderDetailPage />} />
+
+              {/* GST Invoices */}
+              <Route path="gst" element={<GstPage />} />
 
               {/* 4. Customers */}
               <Route path="customers" element={<CustomersListPage />} />

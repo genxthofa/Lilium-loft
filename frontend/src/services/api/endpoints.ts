@@ -248,6 +248,17 @@ export const ordersApi = {
       body: json({ amount, reason }),
     });
   },
+
+  async update(id: number | string, payload: Record<string, unknown>): Promise<BackendOrder> {
+    return apiClient<BackendOrder>(`/orders/${id}`, {
+      method: 'PUT',
+      body: json(payload),
+    });
+  },
+
+  async remove(id: number | string): Promise<void> {
+    await apiClient<void>(`/orders/${id}`, { method: 'DELETE' });
+  },
 };
 
 // ----------------- Customers -----------------

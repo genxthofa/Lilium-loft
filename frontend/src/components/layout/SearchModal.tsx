@@ -126,7 +126,7 @@ export function SearchModal() {
                           {p.name}
                         </div>
                         <div className="text-xs text-slate-400">
-                          SKU: {p.sku} • {formatMoney(p.price)}
+                          {formatMoney(p.price)}
                         </div>
                       </div>
                     </div>

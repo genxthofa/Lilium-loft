@@ -9,6 +9,7 @@ const routeNameMap: Record<string, string> = {
   edit: 'Edit Product',
   categories: 'Categories',
   orders: 'Orders',
+  gst: 'GST',
   customers: 'Customers',
   inventory: 'Inventory',
   coupons: 'Coupons',

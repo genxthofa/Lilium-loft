@@ -7,6 +7,7 @@ use App\Models\WooCustomer;
 use App\Models\WooOrder;
 use App\Models\WooProduct;
 use App\Models\WooWebhookDelivery;
+use App\Services\WhatsApp\InteraktService;
 use App\Services\WooCommerce\WooSyncService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -58,12 +59,32 @@ class ProcessWooWebhook implements ShouldQueue
             return;
         }
 
-        match ($this->resource) {
+        $previousStatus = $this->resource === 'order'
+            ? WooOrder::where('woo_id', $id)->value('status')
+            : null;
+
+        $stored = match ($this->resource) {
             'order' => $sync->storeOrder($this->payload),
             'product' => $sync->storeProduct($this->payload),
             'customer' => $sync->storeCustomer($this->payload),
             'coupon' => $sync->storeCoupon($this->payload),
         };
+
+        if ($this->resource === 'order' && $stored instanceof WooOrder) {
+            $interakt = app(InteraktService::class);
+            if ($this->event === 'created' || ($previousStatus === null)) {
+                $interakt->sendOrderCreated($stored);
+            } elseif ($previousStatus !== $stored->status) {
+                match ($stored->status) {
+                    'processing' => $interakt->sendOrderCreated($stored),
+                    'in-processing' => $interakt->sendOrderProcessing($stored),
+                    'dispatch' => $interakt->sendOrderDispatched($stored),
+                    'out-for-delivery' => $interakt->sendOrderOutForDelivery($stored),
+                    'completed' => $interakt->sendOrderCompleted($stored),
+                    default => null,
+                };
+            }
+        }
 
         $this->finish($delivery, 'processed');
     }

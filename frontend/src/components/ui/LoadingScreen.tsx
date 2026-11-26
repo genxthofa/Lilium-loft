@@ -36,6 +36,21 @@ export function LoadingScreen({
           />
         </div>
       </div>
+
+      {(message || subMessage) && (
+        <div className="mt-5 px-5 py-2.5 rounded-2xl bg-white/95 border border-white shadow-lg text-center max-w-xs sm:max-w-sm mx-4">
+          {message && (
+            <p className="text-sm sm:text-[15px] font-semibold text-slate-900">
+              {message}
+            </p>
+          )}
+          {subMessage && (
+            <p className="text-xs text-slate-500 mt-0.5">
+              {subMessage}
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
 }

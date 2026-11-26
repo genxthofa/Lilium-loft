@@ -146,11 +146,15 @@ export function CustomerDetailPage() {
   const getOrderStatusBadge = (status: string) => {
     switch (status) {
       case 'completed':
-        return <Badge variant="success">Completed</Badge>;
+        return <Badge variant="success">Delivered</Badge>;
       case 'processing':
         return <Badge variant="info">Order Placed</Badge>;
+      case 'in-processing':
+        return <Badge variant="info">Processing</Badge>;
       case 'dispatch':
         return <Badge variant="purple">Dispatched</Badge>;
+      case 'out-for-delivery':
+        return <Badge variant="warning">Out for Delivery</Badge>;
       case 'on-hold':
         return <Badge variant="warning">On-Hold</Badge>;
       case 'pending':

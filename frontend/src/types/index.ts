@@ -83,8 +83,10 @@ export interface Product {
 export type OrderStatus =
   | 'pending'
   | 'processing'
+  | 'in-processing'
   | 'on-hold'
   | 'dispatch'
+  | 'out-for-delivery'
   | 'completed'
   | 'cancelled'
   | 'refunded'
@@ -164,6 +166,7 @@ export interface Order {
   courierName?: string;
   trackingNumber?: string;
   dispatchedAt?: string;
+  customerNote?: string;
   notes: OrderNote[];
   refunds: OrderRefund[];
 }

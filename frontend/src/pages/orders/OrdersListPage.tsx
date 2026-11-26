@@ -5,8 +5,8 @@ import {
   Search,
   Filter,
   Download,
-  Eye,
-  Printer,
+  // Eye,
+  // Printer,
   CheckCircle,
   Clock,
   AlertTriangle,
@@ -14,19 +14,24 @@ import {
   XCircle,
   ChevronRight,
   X,
-  FileText,
-  Loader2,
+  Edit,
+  Trash2,
+  // FileText,
+  // Loader2,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { FilterModal } from '@/components/ui/filter-modal';
-import { InvoiceModal } from '@/components/orders/InvoiceModal';
+// import { InvoiceModal } from '@/components/orders/InvoiceModal';
 import { OrderDetailModal } from '@/components/orders/OrderDetailModal';
-import { BulkInvoiceModal } from '@/components/orders/BulkInvoiceModal';
-import { printInvoice, downloadInvoicePDF, getInvoiceNumber } from '@/utils/invoice';
-import { useOrderStore, useUIStore } from '@/store';
+import { EditOrderModal } from '@/components/orders/EditOrderModal';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { getErrorMessage } from '@/utils/errors';
+// import { BulkInvoiceModal } from '@/components/orders/BulkInvoiceModal';
+// import { printInvoice, downloadInvoicePDF, getInvoiceNumber } from '@/utils/invoice';
+import { useOrderStore } from '@/store'; // , useUIStore
 import { toast } from 'sonner';
 import {
   Table,
@@ -51,25 +56,29 @@ import { exportToCSV } from '@/utils/csv';
 
 export function OrdersListPage() {
   const navigate = useNavigate();
-  const { orders } = useOrderStore();
-  const { generatedInvoiceIds, generateInvoice } = useUIStore();
+  const { orders, updateOrder, deleteOrder } = useOrderStore();
+  const [editingOrder, setEditingOrder] = useState<Order | null>(null);
+  const [deletingOrder, setDeletingOrder] = useState<Order | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  // const { generatedInvoiceIds, generateInvoice } = useUIStore();
 
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   // Same rolling window the dashboard uses, so the two can be compared directly.
-  const [period, setPeriod] = useState<string>('today');
+  const [period, setPeriod] = useState<string>('all');
   const [customFrom, setCustomFrom] = useState<string>('');
   const [customTo, setCustomTo] = useState<string>('');
   const [currentPage, setCurrentPage] = useState(1);
   const [filterModalOpen, setFilterModalOpen] = useState(false);
-  const [selectedInvoiceOrder, setSelectedInvoiceOrder] = useState<Order | null>(null);
-  const [invoiceModalOpen, setInvoiceModalOpen] = useState(false);
+  // const [selectedInvoiceOrder, setSelectedInvoiceOrder] = useState<Order | null>(null);
+  // const [invoiceModalOpen, setInvoiceModalOpen] = useState(false);
   const [selectedOrderForModal, setSelectedOrderForModal] = useState<Order | null>(null);
   const [orderModalOpen, setOrderModalOpen] = useState(false);
-  const [bulkInvoiceOpen, setBulkInvoiceOpen] = useState(false);
-  const [downloadingOrderId, setDownloadingOrderId] = useState<string | number | null>(null);
+  // const [bulkInvoiceOpen, setBulkInvoiceOpen] = useState(false);
+  // const [downloadingOrderId, setDownloadingOrderId] = useState<string | number | null>(null);
   const pageSize = 10;
 
+  /* Moved to GST page (/gst)
   const handleGenerateInvoice = (order: Order, e: React.MouseEvent) => {
     e.stopPropagation();
     generateInvoice(order.id);
@@ -108,22 +117,23 @@ export function OrdersListPage() {
       setDownloadingOrderId(null);
     }
   };
+  */
 
   const hasActiveFilters = Boolean(
     searchTerm.trim() ||
     selectedStatus !== 'all' ||
-    (period === 'custom' ? Boolean(customFrom || customTo) : period !== 'today')
+    (period === 'custom' ? Boolean(customFrom || customTo) : period !== 'all')
   );
 
   const activeFilterCount =
     (selectedStatus !== 'all' ? 1 : 0) +
-    (period !== 'today' ? 1 : 0) +
+    (period !== 'all' ? 1 : 0) +
     (searchTerm.trim() ? 1 : 0);
 
   const handleClearFilters = () => {
     setSearchTerm('');
     setSelectedStatus('all');
-    setPeriod('today');
+    setPeriod('all');
     setCustomFrom('');
     setCustomTo('');
     setCurrentPage(1);
@@ -134,7 +144,9 @@ export function OrdersListPage() {
     return {
       all: orders.length,
       processing: orders.filter((o) => o.status === 'processing').length,
+      inProcessing: orders.filter((o) => o.status === 'in-processing').length,
       dispatch: orders.filter((o) => o.status === 'dispatch').length,
+      outForDelivery: orders.filter((o) => o.status === 'out-for-delivery').length,
       completed: orders.filter((o) => o.status === 'completed').length,
       onHold: orders.filter((o) => o.status === 'on-hold').length,
       pending: orders.filter((o) => o.status === 'pending').length,
@@ -189,11 +201,15 @@ export function OrdersListPage() {
   const getStatusBadge = (status: OrderStatus) => {
     switch (status) {
       case 'completed':
-        return <Badge variant="success">Completed</Badge>;
+        return <Badge variant="success">Delivered</Badge>;
       case 'processing':
         return <Badge variant="info">Order Placed</Badge>;
+      case 'in-processing':
+        return <Badge variant="info">Processing</Badge>;
       case 'dispatch':
         return <Badge variant="purple">Dispatched</Badge>;
+      case 'out-for-delivery':
+        return <Badge variant="warning">Out for Delivery</Badge>;
       case 'on-hold':
         return <Badge variant="warning">On-Hold</Badge>;
       case 'pending':
@@ -241,6 +257,7 @@ export function OrdersListPage() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2.5 w-full sm:w-auto">
+          {/* Moved to GST page (/gst)
           <Button
             variant="outline"
             size="sm"
@@ -250,6 +267,7 @@ export function OrdersListPage() {
             <FileText className="h-4 w-4" />
             <span>Bulk Invoices</span>
           </Button>
+          */}
           <Button
             variant="outline"
             size="sm"
@@ -267,8 +285,10 @@ export function OrdersListPage() {
         {[
           { key: 'all', label: 'All Orders', count: counts.all },
           { key: 'processing', label: 'Order Placed', count: counts.processing },
+          { key: 'in-processing', label: 'Processing', count: counts.inProcessing },
           { key: 'dispatch', label: 'Dispatched', count: counts.dispatch },
-          { key: 'completed', label: 'Completed', count: counts.completed },
+          { key: 'out-for-delivery', label: 'Out for Delivery', count: counts.outForDelivery },
+          { key: 'completed', label: 'Delivered', count: counts.completed },
           { key: 'on-hold', label: 'On-Hold', count: counts.onHold },
           { key: 'pending', label: 'Pending', count: counts.pending },
           { key: 'failed', label: 'Failed', count: counts.failed },
@@ -401,8 +421,10 @@ export function OrdersListPage() {
                 <SelectContent>
                   <SelectItem value="all">All Statuses</SelectItem>
                   <SelectItem value="processing">Order Placed</SelectItem>
+                  <SelectItem value="in-processing">Processing</SelectItem>
                   <SelectItem value="dispatch">Dispatched</SelectItem>
-                  <SelectItem value="completed">Completed</SelectItem>
+                  <SelectItem value="out-for-delivery">Out for Delivery</SelectItem>
+                  <SelectItem value="completed">Delivered</SelectItem>
                   <SelectItem value="on-hold">On-Hold</SelectItem>
                   <SelectItem value="pending">Pending</SelectItem>
                   <SelectItem value="refunded">Refunded</SelectItem>
@@ -517,8 +539,10 @@ export function OrdersListPage() {
               <SelectContent>
                 <SelectItem value="all">All Statuses</SelectItem>
                 <SelectItem value="processing">Order Placed</SelectItem>
+                <SelectItem value="in-processing">Processing</SelectItem>
                 <SelectItem value="dispatch">Dispatched</SelectItem>
-                <SelectItem value="completed">Completed</SelectItem>
+                <SelectItem value="out-for-delivery">Out for Delivery</SelectItem>
+                <SelectItem value="completed">Delivered</SelectItem>
                 <SelectItem value="on-hold">On-Hold</SelectItem>
                 <SelectItem value="pending">Pending</SelectItem>
                 <SelectItem value="refunded">Refunded</SelectItem>
@@ -640,6 +664,7 @@ export function OrdersListPage() {
                         Payment: <span className="text-slate-700 font-medium">{order.paymentMethodTitle || 'Standard'}</span>
                       </span>
                       <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                        {/* Invoice actions moved to GST page (/gst)
                         {generatedInvoiceIds.includes(String(order.id)) ? (
                           <>
                             <Button
@@ -689,6 +714,7 @@ export function OrdersListPage() {
                             <span>Generate</span>
                           </Button>
                         )}
+                        */}
                         <span
                           onClick={() => navigate(`/orders/${order.id}`)}
                           className="flex items-center gap-0.5 text-red-600 font-medium ml-1 cursor-pointer"
@@ -713,7 +739,8 @@ export function OrdersListPage() {
                       <TableHead>Items</TableHead>
                       <TableHead>Payment Method</TableHead>
                       <TableHead className="text-right">Total</TableHead>
-                      <TableHead className="text-center w-36">Invoice</TableHead>
+                      <TableHead className="text-right w-24">Actions</TableHead>
+                      {/* <TableHead className="text-center w-36">Invoice</TableHead> */}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -751,6 +778,31 @@ export function OrdersListPage() {
                         <TableCell className="text-right font-bold text-slate-900">
                           {formatCurrency(order.total, order.currency)}
                         </TableCell>
+                        <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex items-center justify-end gap-1">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => setEditingOrder(order)}
+                              className="h-7 w-7 text-slate-500 hover:text-slate-900 hover:bg-slate-100"
+                              title="Edit Order"
+                              aria-label="Edit Order"
+                            >
+                              <Edit className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => setDeletingOrder(order)}
+                              className="h-7 w-7 text-red-500 hover:text-red-700 hover:bg-red-50"
+                              title="Delete Order"
+                              aria-label="Delete Order"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                        {/* Invoice column moved to GST page (/gst)
                         <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center justify-center gap-1.5">
                             {generatedInvoiceIds.includes(String(order.id)) ? (
@@ -804,6 +856,7 @@ export function OrdersListPage() {
                             )}
                           </div>
                         </TableCell>
+                        */}
                       </TableRow>
                     ))}
                   </TableBody>
@@ -822,26 +875,70 @@ export function OrdersListPage() {
         </CardContent>
       </Card>
 
-      {/* Official Lilium & Loft Tax Invoice Modal */}
+      {/* Official Lilium & Loft Tax Invoice Modal (moved to GST page /gst)
       <InvoiceModal
         order={selectedInvoiceOrder}
         open={invoiceModalOpen}
         onOpenChange={setInvoiceModalOpen}
       />
+      */}
 
       {/* Order Quick View / Detail Modal */}
       <OrderDetailModal
         order={selectedOrderForModal}
         open={orderModalOpen}
         onOpenChange={setOrderModalOpen}
-        onViewInvoice={(order) => handleOpenInvoice(order)}
+        // onViewInvoice={(order) => handleOpenInvoice(order)}
       />
 
-      {/* Bulk Date-wise Invoice Modal */}
+      {/* Bulk Date-wise Invoice Modal (moved to GST page /gst)
       <BulkInvoiceModal
         orders={orders}
         open={bulkInvoiceOpen}
         onOpenChange={setBulkInvoiceOpen}
+      />
+      */}
+      {/* Edit Order Modal */}
+      <EditOrderModal
+        order={editingOrder}
+        open={Boolean(editingOrder)}
+        onOpenChange={(open) => {
+          if (!open) setEditingOrder(null);
+        }}
+        onSave={async (orderId, payload) => {
+          try {
+            await updateOrder(orderId, payload);
+            toast.success('Order updated successfully.');
+          } catch (err) {
+            toast.error(getErrorMessage(err));
+            throw err;
+          }
+        }}
+      />
+
+      {/* Delete Order Confirmation */}
+      <ConfirmDialog
+        open={Boolean(deletingOrder)}
+        onOpenChange={(open) => {
+          if (!open) setDeletingOrder(null);
+        }}
+        title={deletingOrder ? `Delete Order #${deletingOrder.orderNumber}?` : 'Delete Order?'}
+        description="This will move the order to WooCommerce Trash and remove it from the active orders list."
+        confirmLabel="Move to Trash"
+        isLoading={deleting}
+        onConfirm={async () => {
+          if (!deletingOrder) return;
+          setDeleting(true);
+          try {
+            await deleteOrder(deletingOrder.id);
+            toast.success(`Order #${deletingOrder.orderNumber} moved to trash.`);
+            setDeletingOrder(null);
+          } catch (err) {
+            toast.error(getErrorMessage(err));
+          } finally {
+            setDeleting(false);
+          }
+        }}
       />
     </div>
   );

@@ -20,7 +20,7 @@ use OpenApi\Attributes as OA;
  */
 class ReportController extends Controller
 {
-    private const PAID = ['completed', 'processing', 'dispatch'];
+    private const PAID = ['completed', 'processing', 'in-processing', 'dispatch', 'out-for-delivery'];
 
     #[OA\Get(
         path: '/api/v1/reports/sales',

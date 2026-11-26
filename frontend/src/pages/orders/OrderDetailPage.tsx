@@ -14,6 +14,9 @@ import {
   Calendar,
   ExternalLink,
   FileText,
+  MessageCircle,
+  Edit,
+  Trash2,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -22,6 +25,9 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { InvoiceModal } from '@/components/orders/InvoiceModal';
 import { DispatchModal } from '@/components/orders/DispatchModal';
+import { EditOrderModal } from '@/components/orders/EditOrderModal';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { shareOrderOnWhatsApp } from '@/utils/whatsapp';
 import {
   Select,
   SelectContent,
@@ -50,7 +56,7 @@ export function OrderDetailPage() {
   const currencyLabel = useCurrencyLabel();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { orders, loaded: ordersLoaded, loadOrderDetails, updateOrderStatus, addOrderNote, refundOrder } = useOrderStore();
+  const { orders, loaded: ordersLoaded, loadOrderDetails, updateOrderStatus, updateOrder, deleteOrder, addOrderNote, refundOrder } = useOrderStore();
   const { generatedInvoiceIds, generateInvoice } = useUIStore();
 
   const order = orders.find((o) => o.id === id);
@@ -72,6 +78,9 @@ export function OrderDetailPage() {
   const [refundModalOpen, setRefundModalOpen] = useState(false);
   const [invoiceModalOpen, setInvoiceModalOpen] = useState(false);
   const [dispatchModalOpen, setDispatchModalOpen] = useState(false);
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [refundAmount, setRefundAmount] = useState<number>(0);
   const [refundReason, setRefundReason] = useState('');
   const [refundErrors, setRefundErrors] = useState<{ amount?: string; reason?: string }>({});
@@ -102,15 +111,29 @@ export function OrderDetailPage() {
     try {
       await updateOrderStatus(order.id, newStatus);
       toast.success(`Order status changed to ${newStatus}.`);
+      if (newStatus === 'completed') {
+        await shareOrderOnWhatsApp(order, { status: 'completed' });
+      }
     } catch (err) {
       toast.error(getErrorMessage(err));
     }
   };
 
-  const handleConfirmDispatch = async (courierName: string, trackingNumber: string) => {
+  const handleConfirmDispatch = async (
+    courierName: string,
+    trackingNumber: string,
+    shareWhatsApp: boolean
+  ) => {
     try {
       await updateOrderStatus(order.id, 'dispatch', { courierName, trackingNumber });
       toast.success('Order marked as Dispatched.');
+      if (shareWhatsApp) {
+        await shareOrderOnWhatsApp(order, {
+          status: 'dispatch',
+          courierName,
+          trackingNumber,
+        });
+      }
     } catch (err) {
       toast.error(getErrorMessage(err));
       throw err;
@@ -160,11 +183,15 @@ export function OrderDetailPage() {
   const getStatusBadge = (status: OrderStatus) => {
     switch (status) {
       case 'completed':
-        return <Badge variant="success">Completed</Badge>;
+        return <Badge variant="success">Delivered</Badge>;
       case 'processing':
         return <Badge variant="info">Order Placed</Badge>;
+      case 'in-processing':
+        return <Badge variant="info">Processing</Badge>;
       case 'dispatch':
         return <Badge variant="purple">Dispatched</Badge>;
+      case 'out-for-delivery':
+        return <Badge variant="warning">Out for Delivery</Badge>;
       case 'on-hold':
         return <Badge variant="warning">On-Hold</Badge>;
       case 'pending':
@@ -219,8 +246,10 @@ export function OrderDetailPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="processing">Order Placed</SelectItem>
+                <SelectItem value="in-processing">Processing</SelectItem>
                 <SelectItem value="dispatch">Dispatched</SelectItem>
-                <SelectItem value="completed">Completed</SelectItem>
+                <SelectItem value="out-for-delivery">Out for Delivery</SelectItem>
+                <SelectItem value="completed">Delivered</SelectItem>
                 <SelectItem value="on-hold">On-Hold</SelectItem>
                 <SelectItem value="pending">Pending Payment</SelectItem>
                 <SelectItem value="cancelled">Cancelled</SelectItem>
@@ -242,11 +271,44 @@ export function OrderDetailPage() {
             className="gap-1.5 bg-white text-slate-700 border-slate-200 hover:border-red-300 hover:text-red-700 shrink-0"
           >
             <FileText className="h-4 w-4 text-red-600" />
-            <span>
-              {generatedInvoiceIds.includes(String(order.id))
-                ? 'View Invoice'
-                : 'Generate Invoice'}
-            </span>
+            <span>Customer Invoice</span>
+          </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={async () => {
+              try {
+                await shareOrderOnWhatsApp(order);
+                toast.success('Customer invoice downloaded & WhatsApp opened!');
+              } catch (err) {
+                toast.error(getErrorMessage(err));
+              }
+            }}
+            className="gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600 shrink-0"
+          >
+            <MessageCircle className="h-4 w-4" />
+            <span>Share WhatsApp</span>
+          </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setEditModalOpen(true)}
+            className="gap-1.5 bg-white text-slate-700 border-slate-200 hover:bg-slate-50 shrink-0"
+          >
+            <Edit className="h-4 w-4 text-slate-600" />
+            <span>Edit</span>
+          </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setDeleteDialogOpen(true)}
+            className="gap-1.5 bg-white text-red-600 border-red-200 hover:bg-red-50 shrink-0"
+          >
+            <Trash2 className="h-4 w-4" />
+            <span>Delete</span>
           </Button>
 
           {remainingRefundable > 0 && order.status !== 'cancelled' && (
@@ -724,11 +786,12 @@ export function OrderDetailPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      {/* Official Lilium & Loft Tax Invoice Modal */}
+      {/* Customer Invoice Modal (Non-GST) */}
       <InvoiceModal
         order={order}
         open={invoiceModalOpen}
         onOpenChange={setInvoiceModalOpen}
+        variant="customer"
       />
 
       {/* Dispatch Tracking Modal */}
@@ -739,6 +802,44 @@ export function OrderDetailPage() {
         initialCourierName={order.courierName}
         initialTrackingNumber={order.trackingNumber}
         onConfirm={handleConfirmDispatch}
+      />
+
+      {/* Edit Order Modal */}
+      <EditOrderModal
+        order={order}
+        open={editModalOpen}
+        onOpenChange={setEditModalOpen}
+        onSave={async (orderId, payload) => {
+          try {
+            await updateOrder(orderId, payload);
+            toast.success(`Order #${order.orderNumber} updated successfully.`);
+          } catch (err) {
+            toast.error(getErrorMessage(err));
+            throw err;
+          }
+        }}
+      />
+
+      {/* Delete Order Confirmation */}
+      <ConfirmDialog
+        open={deleteDialogOpen}
+        onOpenChange={setDeleteDialogOpen}
+        title={`Delete Order #${order.orderNumber}?`}
+        description="This will move the order to WooCommerce Trash and remove it from the active orders list."
+        confirmLabel="Move to Trash"
+        isLoading={deleting}
+        onConfirm={async () => {
+          setDeleting(true);
+          try {
+            await deleteOrder(order.id);
+            toast.success(`Order #${order.orderNumber} moved to trash.`);
+            navigate('/orders');
+          } catch (err) {
+            toast.error(getErrorMessage(err));
+          } finally {
+            setDeleting(false);
+          }
+        }}
       />
     </div>
   );

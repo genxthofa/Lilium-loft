@@ -205,7 +205,7 @@ class ProductController extends Controller
     {
         $revenue = WooOrderItem::query()
             ->join('woo_orders', 'woo_orders.woo_id', '=', 'woo_order_items.order_woo_id')
-            ->whereIn('woo_orders.status', ['completed', 'processing', 'dispatch'])
+            ->whereIn('woo_orders.status', ['completed', 'processing', 'in-processing', 'dispatch', 'out-for-delivery'])
             ->whereIn('woo_order_items.product_woo_id', $products->pluck('woo_id'))
             ->selectRaw('woo_order_items.product_woo_id as woo_id, SUM(woo_order_items.total) as revenue')
             ->groupBy('woo_order_items.product_woo_id')
