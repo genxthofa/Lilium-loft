@@ -12,6 +12,7 @@ use App\Services\WooCommerce\WooSyncService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Throwable;
 
 /**
@@ -73,10 +74,14 @@ class ProcessWooWebhook implements ShouldQueue
         if ($this->resource === 'order' && $stored instanceof WooOrder) {
             $interakt = app(InteraktService::class);
             if ($this->event === 'created' || ($previousStatus === null)) {
-                $interakt->sendOrderCreated($stored);
+                if (Cache::add("interakt_placed_{$stored->woo_id}", true, now()->addDays(7))) {
+                    $interakt->sendOrderCreated($stored);
+                }
             } elseif ($previousStatus !== $stored->status) {
                 match ($stored->status) {
-                    'processing' => $interakt->sendOrderCreated($stored),
+                    'processing' => Cache::add("interakt_placed_{$stored->woo_id}", true, now()->addDays(7))
+                        ? $interakt->sendOrderCreated($stored)
+                        : false,
                     'in-processing' => $interakt->sendOrderProcessing($stored),
                     'dispatch' => $interakt->sendOrderDispatched($stored),
                     'out-for-delivery' => $interakt->sendOrderOutForDelivery($stored),

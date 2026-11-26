@@ -36,8 +36,11 @@ class CustomerInvoiceController extends Controller
             ]);
         }
 
-        return response($html, 200, [
-            'Content-Type' => 'text/html; charset=UTF-8',
+        $pdfBinary = $this->buildCustomerInvoicePdf($order);
+
+        return response($pdfBinary, 200, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => "inline; filename=\"Invoice-{$order->number}.pdf\"",
         ]);
     }
 
@@ -68,8 +71,11 @@ class CustomerInvoiceController extends Controller
             ]);
         }
 
-        return response($html, 200, [
-            'Content-Type' => 'text/html; charset=UTF-8',
+        $pdfBinary = $this->buildPackingSlipPdf($order);
+
+        return response($pdfBinary, 200, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => "inline; filename=\"Packing-Slip-{$order->number}.pdf\"",
         ]);
     }
 
@@ -309,5 +315,90 @@ HTML;
     private function num(float $val): string
     {
         return number_format($val, 2);
+    }
+
+    private function buildCustomerInvoicePdf(WooOrder $order): string
+    {
+        $date = $order->woo_created_at ? $order->woo_created_at->format('d-m-Y') : now()->format('d-m-Y');
+        $invDate = $order->woo_created_at ? $order->woo_created_at->format('m-d-Y') : now()->format('m-d-Y');
+        $invoiceNo = "LLC{$order->number}{$invDate}";
+        $lines = [
+            'LILIUM AND LOFT CROCHET STUDIO - INVOICE',
+            '------------------------------------------------------------',
+            "Invoice No: {$invoiceNo}    Order No: #{$order->number}    Date: {$date}",
+            'From: 45 (13), 2nd Cross, Venkata Nagar, Pondicherry 605011',
+            'Bill To: '.($order->billing_name ?: 'Customer').' | '.($order->billing_phone ?: ''),
+            '------------------------------------------------------------',
+            'Items:',
+        ];
+        foreach ($order->items as $idx => $item) {
+            $lines[] = sprintf('%d. %s  x%d  = INR %s', $idx + 1, $item->name, max(1, (int) $item->quantity), number_format((float) $item->total, 2));
+        }
+        $lines[] = '------------------------------------------------------------';
+        $lines[] = 'Shipping: INR '.number_format((float) $order->shipping_total, 2);
+        $lines[] = 'Grand Total: INR '.number_format((float) $order->total, 2);
+        $lines[] = '';
+        $lines[] = 'Thank you for shopping with Lilium & Loft Crochet Studio!';
+
+        return $this->renderSimplePdf($lines);
+    }
+
+    private function buildPackingSlipPdf(WooOrder $order): string
+    {
+        $date = $order->woo_created_at ? $order->woo_created_at->format('m-d-Y') : now()->format('m-d-Y');
+        $shippingMethod = $order->raw['shipping_lines'][0]['method_title'] ?? 'Standard Shipping';
+        $lines = [
+            'LILIUM AND LOFT CROCHET STUDIO - PACKING SLIP',
+            '------------------------------------------------------------',
+            "Order No: #{$order->number}    Order Date: {$date}",
+            "Shipping Method: {$shippingMethod}",
+            'From: 45 (13), 2nd Cross, Venkata Nagar, Pondicherry 605011',
+            'Ship To: '.($order->billing_name ?: 'Customer').' | '.($order->billing_phone ?: ''),
+            '------------------------------------------------------------',
+            'Items:',
+        ];
+        foreach ($order->items as $idx => $item) {
+            $sku = $item->sku ? " [SKU: {$item->sku}]" : '';
+            $lines[] = sprintf('%d. %s%s  - Qty: %d', $idx + 1, $item->name, $sku, max(1, (int) $item->quantity));
+        }
+        $lines[] = '------------------------------------------------------------';
+        $lines[] = 'Thank you for your order!';
+
+        return $this->renderSimplePdf($lines);
+    }
+
+    /** Generates a valid single-page PDF 1.4 binary without external dependencies. */
+    private function renderSimplePdf(array $lines): string
+    {
+        $esc = fn (string $s): string => str_replace(['\\', '(', ')'], ['\\\\', '\\(', '\\)'], preg_replace('/[^\x20-\x7E]/', ' ', $s) ?? '');
+        $stream = "BT\n/F1 11 Tf\n50 770 Td\n16 TL\n";
+        foreach ($lines as $i => $line) {
+            $text = $esc($line);
+            $stream .= $i === 0 ? "({$text}) Tj\n" : "T* ({$text}) Tj\n";
+        }
+        $stream .= "ET\n";
+
+        $objects = [
+            1 => "<< /Type /Catalog /Pages 2 0 R >>",
+            2 => "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            3 => "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>",
+            4 => "<< /Length ".strlen($stream)." >>\nstream\n{$stream}endstream",
+            5 => "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+        ];
+
+        $pdf = "%PDF-1.4\n";
+        $offsets = [0 => 0];
+        foreach ($objects as $num => $body) {
+            $offsets[$num] = strlen($pdf);
+            $pdf .= "{$num} 0 obj\n{$body}\nendobj\n";
+        }
+        $xrefOffset = strlen($pdf);
+        $pdf .= "xref\n0 ".(count($objects) + 1)."\n0000000000 65535 f \n";
+        foreach ($objects as $num => $_) {
+            $pdf .= sprintf("%010d 00000 n \n", $offsets[$num]);
+        }
+        $pdf .= "trailer\n<< /Size ".(count($objects) + 1)." /Root 1 0 R >>\nstartxref\n{$xrefOffset}\n%%EOF";
+
+        return $pdf;
     }
 }

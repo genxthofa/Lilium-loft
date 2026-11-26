@@ -9,7 +9,9 @@ use App\Models\WooOrder;
 use App\Models\WooOrderItem;
 use App\Models\WooProduct;
 use App\Models\WooSyncLog;
+use App\Services\WhatsApp\InteraktService;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
@@ -224,6 +226,13 @@ class WooSyncService
                     'subtotal' => $i['subtotal'] ?? 0,
                     'total' => $i['total'] ?? 0,
                 ]);
+            }
+
+            if (! $existing && $resolvedStatus === 'processing' && $order->woo_created_at && $order->woo_created_at->greaterThan(now()->subDay())) {
+                $cacheKey = "interakt_placed_{$order->woo_id}";
+                if (Cache::add($cacheKey, true, now()->addDays(7))) {
+                    DB::afterCommit(fn () => app(InteraktService::class)->sendOrderCreated($order->fresh('items')));
+                }
             }
 
             return $order;

@@ -19,12 +19,16 @@ class InteraktService
     {
         $template = (string) config('services.interakt.templates.order_created', 'lilium_loft_order_placed');
         $customerName = $order->billing_name ?: 'Customer';
+        $productName = $this->productNames($order);
         $total = $this->formatTotal($order);
+        $orderDate = ($order->woo_created_at ?? $order->created_at ?? now())->format('d-m-Y');
 
         return $this->sendTemplate($order, $template, [
             $customerName,
             "#{$order->number}",
+            $productName,
             $total,
+            $orderDate,
         ]);
     }
 
@@ -32,12 +36,12 @@ class InteraktService
     {
         $template = (string) config('services.interakt.templates.order_processing', 'lilium_loft_order_processing');
         $customerName = $order->billing_name ?: 'Customer';
-        $total = $this->formatTotal($order);
+        $productName = $this->productNames($order);
 
         return $this->sendTemplate($order, $template, [
             $customerName,
             "#{$order->number}",
-            $total,
+            $productName,
         ]);
     }
 
@@ -45,16 +49,18 @@ class InteraktService
     {
         $template = (string) config('services.interakt.templates.order_dispatched', 'lilium_loft_order_dispatched');
         $customerName = $order->billing_name ?: 'Customer';
+        $productName = $this->productNames($order);
         $courier = $order->courier_name ?: 'Courier Partner';
         $tracking = $order->tracking_number ?: 'N/A';
-        $total = $this->formatTotal($order);
+        $dispatchDate = ($order->dispatched_at ?? now())->format('d-m-Y');
 
         return $this->sendTemplate($order, $template, [
             $customerName,
             "#{$order->number}",
+            $productName,
             $courier,
             $tracking,
-            $total,
+            $dispatchDate,
         ]);
     }
 
@@ -62,16 +68,16 @@ class InteraktService
     {
         $template = (string) config('services.interakt.templates.out_for_delivery', 'lilium_loft_out_for_delivery');
         $customerName = $order->billing_name ?: 'Customer';
+        $productName = $this->productNames($order);
         $courier = $order->courier_name ?: 'Courier Partner';
         $tracking = $order->tracking_number ?: 'N/A';
-        $total = $this->formatTotal($order);
 
         return $this->sendTemplate($order, $template, [
             $customerName,
             "#{$order->number}",
+            $productName,
             $courier,
             $tracking,
-            $total,
         ]);
     }
 
@@ -79,7 +85,8 @@ class InteraktService
     {
         $template = (string) config('services.interakt.templates.order_completed', 'lilium_loft_order_delivered');
         $customerName = $order->billing_name ?: 'Customer';
-        $total = $this->formatTotal($order);
+        $productName = $this->productNames($order);
+        $deliveryDate = now()->format('d-m-Y');
 
         return $this->sendTemplate(
             $order,
@@ -87,7 +94,8 @@ class InteraktService
             [
                 $customerName,
                 "#{$order->number}",
-                $total,
+                $productName,
+                $deliveryDate,
             ],
             $this->packingSlipUrl($order),
             "Packing-Slip-{$order->number}.pdf"
@@ -151,6 +159,20 @@ class InteraktService
                 'Authorization' => "Basic {$apiKey}",
                 'Content-Type' => 'application/json',
             ])->timeout(15)->post("{$baseUrl}/message/", $payload);
+
+            // If template doesn't have a Document header configured in Interakt, retry without headerValues/fileName.
+            if ($response->status() === 400 && isset($payload['template']['headerValues'])) {
+                Log::warning('Interakt template rejected document header, retrying without header', [
+                    'order_id' => $order->id,
+                    'template' => $templateName,
+                    'body' => mb_substr($response->body(), 0, 500),
+                ]);
+                unset($payload['template']['headerValues'], $payload['template']['fileName']);
+                $response = Http::withHeaders([
+                    'Authorization' => "Basic {$apiKey}",
+                    'Content-Type' => 'application/json',
+                ])->timeout(15)->post("{$baseUrl}/message/", $payload);
+            }
 
             if ($response->failed()) {
                 Log::error('Interakt WhatsApp API failed', [
@@ -235,6 +257,23 @@ class InteraktService
         }
 
         return ["+{$defaultDigits}", $digits];
+    }
+
+    private function productNames(WooOrder $order): string
+    {
+        $order->loadMissing('items');
+        $names = $order->items
+            ->pluck('name')
+            ->filter()
+            ->map(fn ($n) => trim((string) $n))
+            ->values()
+            ->all();
+
+        if ($names === []) {
+            return 'Order Items';
+        }
+
+        return mb_substr(implode(', ', $names), 0, 200);
     }
 
     private function formatTotal(WooOrder $order): string
