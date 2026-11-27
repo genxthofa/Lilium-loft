@@ -42,10 +42,10 @@ return [
         'country_code' => env('INTERAKT_DEFAULT_COUNTRY_CODE', '+91'),
         'templates' => [
             'order_created' => env('INTERAKT_TEMPLATE_ORDER_CREATED', 'lilium_loft_order_placed'),
-            'order_processing' => env('INTERAKT_TEMPLATE_ORDER_PROCESSING', 'lilium_loft_order_processing'),
-            'order_dispatched' => env('INTERAKT_TEMPLATE_ORDER_DISPATCHED', 'lilium_loft_order_dispatched'),
-            'out_for_delivery' => env('INTERAKT_TEMPLATE_OUT_FOR_DELIVERY', 'lilium_loft_out_for_delivery'),
-            'order_completed' => env('INTERAKT_TEMPLATE_ORDER_COMPLETED', 'lilium_loft_order_delivered'),
+            'order_processing' => env('INTERAKT_TEMPLATE_ORDER_PROCESSING', 'lilium_order_processing'),
+            'order_dispatched' => env('INTERAKT_TEMPLATE_ORDER_DISPATCHED', 'loft_order_dispatched'),
+            'out_for_delivery' => env('INTERAKT_TEMPLATE_OUT_FOR_DELIVERY', 'lilium_out_for_delivery'),
+            'order_completed' => env('INTERAKT_TEMPLATE_ORDER_COMPLETED', 'lilium_order_delivered_jr'),
         ],
     ],
 

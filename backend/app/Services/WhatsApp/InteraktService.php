@@ -29,12 +29,12 @@ class InteraktService
             $productName,
             $total,
             $orderDate,
-        ]);
+        ], $this->customerInvoiceUrl($order), "Invoice-{$order->number}.pdf");
     }
 
     public function sendOrderProcessing(WooOrder $order): bool
     {
-        $template = (string) config('services.interakt.templates.order_processing', 'lilium_loft_order_processing');
+        $template = (string) config('services.interakt.templates.order_processing', 'lilium_order_processing');
         $customerName = $order->billing_name ?: 'Customer';
         $productName = $this->productNames($order);
 
@@ -47,7 +47,7 @@ class InteraktService
 
     public function sendOrderDispatched(WooOrder $order): bool
     {
-        $template = (string) config('services.interakt.templates.order_dispatched', 'lilium_loft_order_dispatched');
+        $template = (string) config('services.interakt.templates.order_dispatched', 'loft_order_dispatched');
         $customerName = $order->billing_name ?: 'Customer';
         $productName = $this->productNames($order);
         $courier = $order->courier_name ?: 'Courier Partner';
@@ -61,12 +61,12 @@ class InteraktService
             $courier,
             $tracking,
             $dispatchDate,
-        ]);
+        ], $this->packingSlipUrl($order), "Courier-Slip-{$order->number}.pdf");
     }
 
     public function sendOrderOutForDelivery(WooOrder $order): bool
     {
-        $template = (string) config('services.interakt.templates.out_for_delivery', 'lilium_loft_out_for_delivery');
+        $template = (string) config('services.interakt.templates.out_for_delivery', 'lilium_out_for_delivery');
         $customerName = $order->billing_name ?: 'Customer';
         $productName = $this->productNames($order);
         $courier = $order->courier_name ?: 'Courier Partner';
@@ -83,23 +83,17 @@ class InteraktService
 
     public function sendOrderCompleted(WooOrder $order): bool
     {
-        $template = (string) config('services.interakt.templates.order_completed', 'lilium_loft_order_delivered');
+        $template = (string) config('services.interakt.templates.order_completed', 'lilium_order_delivered_jr');
         $customerName = $order->billing_name ?: 'Customer';
         $productName = $this->productNames($order);
         $deliveryDate = now()->format('d-m-Y');
 
-        return $this->sendTemplate(
-            $order,
-            $template,
-            [
-                $customerName,
-                "#{$order->number}",
-                $productName,
-                $deliveryDate,
-            ],
-            $this->packingSlipUrl($order),
-            "Packing-Slip-{$order->number}.pdf"
-        );
+        return $this->sendTemplate($order, $template, [
+            $customerName,
+            "#{$order->number}",
+            $productName,
+            $deliveryDate,
+        ]);
     }
 
     /**
@@ -150,8 +144,6 @@ class InteraktService
         Log::info('WA[2] phone parsed', $ctx + ['country_code' => $phone[0], 'phone_number' => $phone[1]]);
 
         [$countryCode, $phoneNumber] = $phone;
-        $invoiceUrl = $documentUrl ?: $this->customerInvoiceUrl($order);
-        $docFileName = $fileName ?: "Invoice-{$order->number}.pdf";
         $baseUrl = rtrim((string) config('services.interakt.base_url', 'https://api.interakt.ai/v1/public'), '/');
         $apiKey = (string) config('services.interakt.api_key');
 
@@ -169,18 +161,22 @@ class InteraktService
             'template' => [
                 'name' => $templateName,
                 'languageCode' => 'en',
-                'headerValues' => [$invoiceUrl],
-                'fileName' => $docFileName,
                 'bodyValues' => $sanitizedBody,
             ],
         ];
+
+        // Only templates created with a Document header (placed, dispatched) get a PDF.
+        if ($documentUrl !== null) {
+            $payload['template']['headerValues'] = [$documentUrl];
+            $payload['template']['fileName'] = $fileName ?: "Document-{$order->number}.pdf";
+        }
 
         // STEP 3: exactly what we are about to send (API key is never logged).
         Log::info('WA[3] request prepared', $ctx + [
             'url' => "{$baseUrl}/message/",
             'payload' => $payload,
             'body_value_count' => count($sanitizedBody),
-            'document_url_is_public' => ! preg_match('#^https?://(localhost|127\.|192\.168\.|10\.)#i', (string) $invoiceUrl),
+            'document_url_is_public' => $documentUrl === null || ! preg_match('#^https?://(localhost|127\.|192\.168\.|10\.)#i', (string) ($documentUrl ?? '')),
         ]);
 
         try {
